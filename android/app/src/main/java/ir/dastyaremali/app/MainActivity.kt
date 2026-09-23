@@ -205,63 +205,198 @@ fun Home(modifier: Modifier, logout: () -> Unit) {
     val context = LocalContext.current
     var d by remember { mutableStateOf<JSONObject?>(null) }
     var error by remember { mutableStateOf("") }
+
     LaunchedEffect(Unit) {
-        try { d = JSONObject(call(context, "/api/dashboard/")) } catch (e: Exception) { error = e.message ?: "خطا" }
+        try { d = JSONObject(call(context, "/api/dashboard/")) }
+        catch (e: Exception) { error = e.message ?: "خطا" }
     }
-    Column(modifier.fillMaxSize().padding(16.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Column {
-                Text("سلام 👋", style = MaterialTheme.typography.titleMedium)
-                Text("دستیار مالی", style = MaterialTheme.typography.headlineMedium)
+
+    val teal = Color(0xFF0F766E)
+    val tealLight = Color(0xFFE6F4F1)
+    val ink = Color(0xFF17211F)
+    val muted = Color(0xFF6B7A76)
+
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("سلام 👋", style = MaterialTheme.typography.titleMedium, color = muted)
+                    Spacer(Modifier.height(2.dp))
+                    Text("داشبورد مالی", style = MaterialTheme.typography.headlineSmall, color = ink)
+                }
+                OutlinedButton(onClick = logout) { Text("خروج") }
             }
-            TextButton(onClick = logout) { Text("خروج") }
         }
-        Spacer(Modifier.height(16.dp))
-        if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
-        d?.let {
-            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFF0F766E))) {
-                Column(Modifier.padding(20.dp)) {
-                    Text("موجودی فعلی", color = Color.White.copy(alpha=.8f))
-                    Text(money(it.opt("current_balance")), style = MaterialTheme.typography.headlineMedium, color = Color.White)
-                    Spacer(Modifier.height(14.dp))
-                    Text("قابل خرج امن", color = Color.White.copy(alpha=.8f))
-                    Text(money(it.opt("safe_to_spend")), style = MaterialTheme.typography.titleLarge, color = Color.White)
+
+        if (error.isNotBlank()) {
+            item { Text(error, color = MaterialTheme.colorScheme.error) }
+        }
+
+        d?.let { data ->
+            item {
+                Card(
+                    Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.large,
+                    colors = CardDefaults.cardColors(containerColor = teal)
+                ) {
+                    Column(Modifier.padding(20.dp)) {
+                        Text("موجودی فعلی", color = Color.White.copy(alpha = .78f))
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            money(data.opt("current_balance")),
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = Color.White
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Column(Modifier.weight(1f)) {
+                                Text("قابل خرج امن", color = Color.White.copy(alpha = .72f))
+                                Text(money(data.opt("safe_to_spend")), color = Color.White, style = MaterialTheme.typography.titleMedium)
+                            }
+                            Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
+                                Text("وضعیت", color = Color.White.copy(alpha = .72f))
+                                Text(
+                                    when (data.optString("risk_level")) {
+                                        "DANGER" -> "نیاز به توجه"
+                                        "WARNING" -> "نیاز به مدیریت"
+                                        else -> "پایدار"
+                                    },
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                            }
+                        }
+                    }
                 }
             }
-            Spacer(Modifier.height(12.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                SummaryCard("درآمد ماه", money(it.opt("monthly_income")), Modifier.weight(1f))
-                SummaryCard("هزینه ماه", money(it.opt("monthly_expense")), Modifier.weight(1f))
+
+            item {
+                Text("خلاصه این ماه", style = MaterialTheme.typography.titleMedium, color = ink)
             }
-            Spacer(Modifier.height(10.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                SummaryCard("کل بدهی", money(it.opt("total_debt")), Modifier.weight(1f))
-                SummaryCard("تعهدات", money(it.opt("total_commitments")), Modifier.weight(1f))
+
+            item {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    DashboardMetric("درآمد", money(data.opt("monthly_income")), "↑", tealLight, teal, Modifier.weight(1f))
+                    DashboardMetric("هزینه", money(data.opt("monthly_expense")), "↓", Color(0xFFFFF0ED), Color(0xFFC2412D), Modifier.weight(1f))
+                }
             }
-            Spacer(Modifier.height(14.dp))
-            Text("وضعیت مالی", style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(6.dp))
-            Card(Modifier.fillMaxWidth()) {
-                Text(
-                    when {
-                        it.optString("risk_level") == "DANGER" -> "نیاز به توجه فوری"
-                        it.optString("risk_level") == "WARNING" -> "نیاز به مدیریت بیشتر"
-                        else -> "وضعیت پایدار"
-                    },
-                    modifier = Modifier.padding(16.dp),
-                    style = MaterialTheme.typography.titleMedium
-                )
+
+            item {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    DashboardMetric("کل بدهی", money(data.opt("total_debt")), "●", Color(0xFFFFF7E6), Color(0xFF9A6700), Modifier.weight(1f))
+                    DashboardMetric("تعهدات", money(data.opt("total_commitments")), "◆", Color(0xFFF1EEFF), Color(0xFF6D5BD0), Modifier.weight(1f))
+                }
             }
-        } ?: Box(Modifier.fillMaxWidth().padding(30.dp)) { CircularProgressIndicator() }
+
+            item {
+                Card(
+                    Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.large
+                ) {
+                    Column(Modifier.padding(18.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("وضعیت مالی", style = MaterialTheme.typography.titleMedium, color = ink)
+                            Text(
+                                when (data.optString("risk_level")) {
+                                    "DANGER" -> "پرریسک"
+                                    "WARNING" -> "هشدار"
+                                    else -> "مناسب"
+                                },
+                                color = when (data.optString("risk_level")) {
+                                    "DANGER" -> Color(0xFFC2412D)
+                                    "WARNING" -> Color(0xFF9A6700)
+                                    else -> teal
+                                }
+                            )
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        LinearProgressIndicator(
+                            progress = {
+                                when (data.optString("risk_level")) {
+                                    "DANGER" -> .25f
+                                    "WARNING" -> .55f
+                                    else -> .85f
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            color = teal,
+                            trackColor = tealLight
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            when (data.optString("risk_level")) {
+                                "DANGER" -> "تعهدات و بدهی‌ها را با دقت بیشتری بررسی کنید."
+                                "WARNING" -> "قبل از هزینه‌های بزرگ، تعهدات پیش‌رو را بررسی کنید."
+                                else -> "جریان مالی شما در وضعیت متعادل‌تری قرار دارد."
+                            },
+                            color = muted
+                        )
+                    }
+                }
+            }
+
+            item {
+                Card(
+                    Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.large,
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF7FAF9))
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(18.dp),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = MaterialTheme.shapes.medium,
+                            color = tealLight
+                        ) {
+                            Text("✓", modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp), color = teal, style = MaterialTheme.typography.titleLarge)
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("پیشنهاد دستیار", style = MaterialTheme.typography.titleMedium, color = ink)
+                            Text(
+                                "برای تصمیم‌های مالی، موجودی امن و تعهدات را همزمان در نظر بگیرید.",
+                                color = muted
+                            )
+                        }
+                    }
+                }
+            }
+        } ?: item {
+            Box(Modifier.fillMaxWidth().height(260.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                CircularProgressIndicator(color = teal)
+            }
+        }
     }
 }
+
 @Composable
-fun SummaryCard(title: String, value: String, modifier: Modifier) {
-    Card(modifier) {
-        Column(Modifier.padding(14.dp)) {
-            Text(title, style = MaterialTheme.typography.labelMedium)
-            Spacer(Modifier.height(5.dp))
-            Text(value, style = MaterialTheme.typography.titleMedium)
+fun DashboardMetric(
+    title: String,
+    value: String,
+    symbol: String,
+    background: Color,
+    accent: Color,
+    modifier: Modifier
+) {
+    Card(modifier, shape = MaterialTheme.shapes.large) {
+        Column(Modifier.padding(15.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(title, style = MaterialTheme.typography.labelLarge)
+                Surface(shape = MaterialTheme.shapes.small, color = background) {
+                    Text(symbol, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), color = accent)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(value, style = MaterialTheme.typography.titleMedium, color = Color(0xFF17211F))
         }
     }
 }
