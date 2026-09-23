@@ -393,15 +393,54 @@ fun SimpleChoice(label: String, choices: List<Pair<String,String>>, selected: St
 }
 @Composable
 fun Loans(modifier: Modifier) {
-    val context = LocalContext.current
-    var data by remember { mutableStateOf(listOf<JSONObject>()) }
-    var error by remember { mutableStateOf("") }
-    LaunchedEffect(Unit) { try {
-        val a = JSONArray(call(context, "/api/loans/")); data = List(a.length()) { a.getJSONObject(it) }
-    } catch(e: Exception) { error = e.message ?: "خطا" } }
-    Column(modifier.fillMaxSize().padding(16.dp)) {
-        Text("وام و اقساط", style = MaterialTheme.typography.headlineSmall)
-        if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
-        LazyColumn { items(data) { l -> ListItem(headlineContent={Text(l.optString("title"))}, trailingContent={Text(money(l.opt("principal_amount")))}) } }
+    val context=LocalContext.current; val scope=rememberCoroutineScope()
+    var loans by remember{mutableStateOf(listOf<JSONObject>())}; var installments by remember{mutableStateOf(listOf<JSONObject>())}
+    var accounts by remember{mutableStateOf(listOf<JSONObject>())}; var categories by remember{mutableStateOf(listOf<JSONObject>())}
+    var selected by remember{mutableStateOf<JSONObject?>(null)}; var showNew by remember{mutableStateOf(false)}; var error by remember{mutableStateOf("")}
+    fun load(){scope.launch{try{
+        loans=JSONArray(call(context,"/api/loans/")).toObjects()
+        accounts=JSONArray(call(context,"/api/accounts/")).toObjects()
+        categories=JSONArray(call(context,"/api/categories/")).toObjects()
+        selected?.let{s->installments=JSONArray(call(context,"/api/installments/?loan="+s.optInt("id"))).toObjects()}
+    }catch(e:Exception){error=e.message?:"خطا"}}}
+    LaunchedEffect(Unit){load()}
+    Column(modifier.fillMaxSize().padding(16.dp)){
+        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){
+            Text(if(selected==null)"وام و اقساط" else selected!!.optString("title"),style=MaterialTheme.typography.headlineSmall)
+            if(selected==null) Button(onClick={showNew=true}){Text("وام جدید")} else TextButton(onClick={selected=null}){Text("بازگشت")}
+        }
+        if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
+        if(selected==null) LazyColumn{items(loans){l->ListItem(
+            headlineContent={Text(l.optString("title"))},
+            supportingContent={Text("اصل: "+money(l.opt("principal_amount"))+"  |  هر قسط: "+money(l.opt("installment_amount")))},
+            trailingContent={TextButton(onClick={selected=l;scope.launch{try{installments=JSONArray(call(context,"/api/installments/?loan="+l.optInt("id"))).toObjects()}catch(e:Exception){error=e.message?:"خطا"}}}){Text("اقساط")}}
+        );HorizontalDivider()}}
+        else LazyColumn{items(installments){i->
+            val paid=i.optString("status")=="PAID"
+            ListItem(headlineContent={Text("قسط "+i.optInt("installment_number"))},
+                supportingContent={Text("سررسید: "+apiToJalali(i.optString("due_date"))+" | "+i.optString("status"))},
+                trailingContent={Column{Text(money(i.opt("amount")));if(!paid)TextButton(onClick={scope.launch{try{
+                    val aid=accounts.firstOrNull()?.optInt("id",0)?:0; val cid=categories.firstOrNull{it.optString("category_type")=="EXPENSE"}?.optInt("id",0)?:0
+                    if(aid==0||cid==0)error="ابتدا یک حساب و دسته‌بندی هزینه داشته باشید" else {call(context,"/api/installments/"+i.optInt("id")+"/pay/","POST",JSONObject().put("amount",i.opt("amount")).put("account_id",aid).put("category_id",cid).put("paid_date",todayApi()).toString());load()}
+                }catch(e:Exception){error=e.message?:"خطا"}}}){Text("پرداخت")}}}}
+            );HorizontalDivider()
+        }}
     }
+    if(showNew) LoanDialog({showNew=false},{load()})
+}
+
+@Composable
+fun LoanDialog(onClose:()->Unit,onSaved:()->Unit){
+    val context=LocalContext.current; val scope=rememberCoroutineScope()
+    var title by remember{mutableStateOf("")}; var principal by remember{mutableStateOf("")}; var installment by remember{mutableStateOf("")}; var count by remember{mutableStateOf("")}; var start by remember{mutableStateOf(todayJalali())}; var error by remember{mutableStateOf("")}
+    AlertDialog(onDismissRequest=onClose,title={Text("وام جدید")},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
+        TextField(title,{title=it},label={Text("عنوان")},modifier=Modifier.fillMaxWidth())
+        AmountField("مبلغ وام",principal){principal=it}; AmountField("مبلغ قسط",installment){installment=it}
+        OutlinedTextField(count,{count=it.filter(Char::isDigit)},label={Text("تعداد اقساط")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),modifier=Modifier.fillMaxWidth())
+        OutlinedButton(onClick={JalaliDateDialog(start){start=it}},modifier=Modifier.fillMaxWidth()){Text("شروع: "+start)}
+        if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
+    }},confirmButton={Button(onClick={scope.launch{try{
+        val body=JSONObject().put("title",title.trim()).put("loan_type","LOAN").put("principal_amount",principal.toLongOrNull()?:0).put("installment_amount",installment.toLongOrNull()?:0).put("total_installments",count.toIntOrNull()?:0).put("start_date",jalaliToApi(start)).put("is_active",true)
+        if(title.isBlank()||principal.toLongOrNull()?:0<=0||installment.toLongOrNull()?:0<=0||count.toIntOrNull()?:0<1)error="اطلاعات وام را کامل کنید" else {call(context,"/api/loans/","POST",body.toString());onClose();onSaved()}
+    }catch(e:Exception){error=e.message?:"خطا"}}}){Text("ثبت")}},dismissButton={TextButton(onClick=onClose){Text("انصراف")}})
 }
