@@ -16,7 +16,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.LayoutDirection
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -428,7 +427,7 @@ fun Loans(modifier: Modifier) {
             val paid = inst.optString("status") == "PAID"
             ListItem(headlineContent = { Text("قسط " + inst.optInt("installment_number")) },
                 supportingContent = { Text("سررسید: " + apiToJalali(inst.optString("due_date")) + " | " + inst.optString("status")) },
-                trailingContent = { Column(horizontalAlignment = Alignment.End) {
+                trailingContent = { androidx.compose.foundation.layout.Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
                     Text(money(inst.opt("amount")))
                     if (!paid) TextButton(onClick = { scope.launch { try {
                         val aid = accounts.firstOrNull()?.optInt("id", 0) ?: 0
