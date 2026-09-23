@@ -38,54 +38,91 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private fun Context.token(): String? = getSharedPreferences(PREF, 0).getString("access", null)
-private fun Context.saveToken(v: String) = getSharedPreferences(PREF, 0).edit().putString("access", v).apply()
-private fun Context.logout() = getSharedPreferences(PREF, 0).edit().clear().apply()
+private fun Context.prefs() = getSharedPreferences(PREF, 0)
+private fun Context.token(): String? = prefs().getString("access", null)
+private fun Context.refresh(): String? = prefs().getString("refresh", null)
+private fun Context.saveTokens(access: String, refresh: String?) {
+    prefs().edit().putString("access", access).apply { if (refresh != null) putString("refresh", refresh) }.apply()
+}
+private fun Context.logout() = prefs().edit().clear().apply()
 
-private suspend fun call(context: Context, path: String, method: String = "GET", body: String? = null): String =
+private suspend fun rawCall(context: Context, token: String?, path: String, method: String, body: String?): Pair<Int,String> =
     withContext(Dispatchers.IO) {
         val c = URL(API + path).openConnection() as HttpURLConnection
         c.requestMethod = method
         c.connectTimeout = 15000
         c.readTimeout = 20000
         c.setRequestProperty("Content-Type", "application/json")
-        context.token()?.let { c.setRequestProperty("Authorization", "Bearer " + it) }
-        if (body != null) {
-            c.doOutput = true
-            c.outputStream.use { it.write(body.toByteArray()) }
-        }
-        val text = (if (c.responseCode in 200..299) c.inputStream else c.errorStream)
-            ?.bufferedReader()?.use { it.readText() } ?: ""
-        if (c.responseCode !in 200..299) {
-            val msg = try { JSONObject(text).optString("detail", text) } catch (_: Exception) { text }
-            throw IllegalStateException(if (msg.isBlank()) "خطا در ارتباط با سرور" else msg)
-        }
-        text
+        if (token != null) c.setRequestProperty("Authorization", "Bearer $token")
+        if (body != null) { c.doOutput = true; c.outputStream.use { it.write(body.toByteArray()) } }
+        val text = (if (c.responseCode in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() } ?: ""
+        Pair(c.responseCode, text)
     }
+
+private suspend fun call(context: Context, path: String, method: String = "GET", body: String? = null): String {
+    var (code, text) = rawCall(context, context.token(), path, method, body)
+    if (code == 401 && context.refresh() != null) {
+        val rr = JSONObject().put("refresh", context.refresh()).toString()
+        val (rc, rt) = rawCall(context, null, "/api/auth/token/refresh/", "POST", rr)
+        if (rc in 200..299) {
+            val nr = JSONObject(rt).optString("access")
+            if (nr.isNotBlank()) {
+                context.saveTokens(nr, null)
+                code to text
+                val result = rawCall(context, nr, path, method, body)
+                code = result.first; text = result.second
+            }
+        }
+    }
+    if (code !in 200..299) {
+        val msg = try { JSONObject(text).optString("detail", text) } catch (_: Exception) { text }
+        throw IllegalStateException(if (msg.isBlank()) "خطا در ارتباط با سرور ($code)" else msg)
+    }
+    return text
+}
 
 private fun money(v: Any?): String {
     val n = v?.toString()?.toDoubleOrNull()?.toLong() ?: 0
     return NumberFormat.getNumberInstance(Locale("fa", "IR")).format(n) + " تومان"
 }
 
-private fun today(): String {
-    val c = Calendar.getInstance()
-    return "%04d-%02d-%02d".format(c.get(Calendar.YEAR), c.get(Calendar.MONTH) + 1, c.get(Calendar.DAY_OF_MONTH))
+private fun gregorianToJalali(gy: Int, gm: Int, gd: Int): Triple<Int,Int,Int> {
+    val gdm = intArrayOf(0,31,28,31,30,31,30,31,31,30,31,30,31)
+    val jdm = intArrayOf(0,31,31,31,31,31,30,30,30,30,30,29,29)
+    var gy2=gy-1600; var jy=979; var days=365*gy2+(gy2+3)/4-(gy2+99)/100+(gy2+399)/400
+    for(i in 1 until gm) days += gdm[i]
+    if(gm>2 && (gy%4==0 && gy%100!=0 || gy%400==0)) days++
+    days += gd-1
+    jy += 33*(days/12053); var r=days%12053
+    jy += 4*(r/1461); r%=1461
+    if(r>365){ jy += (r-1)/365; r=(r-1)%365 }
+    val jm = if(r<186) 1+r/31 else 7+(r-186)/30
+    val jd = 1 + if(r<186) r%31 else (r-186)%30
+    return Triple(jy,jm,jd)
 }
-private fun pickDate(context: Context, initial: String, onPicked: (String) -> Unit) {
-    val p = initial.split("-").mapNotNull { it.toIntOrNull() }
-    val c = Calendar.getInstance()
-    val y = p.getOrNull(0) ?: c.get(Calendar.YEAR)
-    val m = (p.getOrNull(1) ?: (c.get(Calendar.MONTH) + 1)) - 1
-    val d = p.getOrNull(2) ?: c.get(Calendar.DAY_OF_MONTH)
-    DatePickerDialog(context, { _, yy, mm, dd ->
-        onPicked("%04d-%02d-%02d".format(yy, mm + 1, dd))
-    }, y, m, d).show()
+private fun jalaliToGregorian(jy0:Int,jm:Int,jd:Int): Triple<Int,Int,Int> {
+    var jy=jy0-979; var days=365*jy+(jy/33)*8+((jy%33)+3)/4
+    for(i in 1 until jm) days += if(i<=6)31 else 30
+    days += jd-1
+    var gy=1600+400*(days/146097); var r=days%146097
+    if(r>=36525){ gy += 100*(--r/36524); r%=36524; if(r>=365) r++ }
+    gy += 4*(r/1461); r%=1461
+    if(r>=366){ gy += (r-1)/365; r=(r-1)%365 }
+    val gd=r+1
+    val gmLens=intArrayOf(31,if(gy%4==0&&gy%100!=0||gy%400==0)29 else 28,31,30,31,30,31,31,30,31,30,31)
+    var gm=0; var rem=gd
+    while(rem>gmLens[gm]){ rem-=gmLens[gm]; gm++ }
+    return Triple(gy,gm+1,rem)
 }
-
-private fun JSONArray.toObjects(): List<JSONObject> =
-    List(length()) { getJSONObject(it) }
-
+private fun todayJalali(): String { val c=Calendar.getInstance(); val j=gregorianToJalali(c.get(Calendar.YEAR),c.get(Calendar.MONTH)+1,c.get(Calendar.DAY_OF_MONTH)); return "%04d/%02d/%02d".format(j.first,j.second,j.third) }
+private fun jalaliToApi(s:String): String {
+    val p=s.replace("-","/").split("/").mapNotNull{it.toIntOrNull()}
+    if(p.size!=3) return todayApi()
+    val g=jalaliToGregorian(p[0],p[1],p[2]); return "%04d-%02d-%02d".format(g.first,g.second,g.third)
+}
+private fun todayApi(): String { val c=Calendar.getInstance(); return "%04d-%02d-%02d".format(c.get(Calendar.YEAR),c.get(Calendar.MONTH)+1,c.get(Calendar.DAY_OF_MONTH)) }
+private fun apiToJalali(s:String): String { val p=s.split("-").mapNotNull{it.toIntOrNull()}; if(p.size!=3)return s; val j=gregorianToJalali(p[0],p[1],p[2]); return "%04d/%02d/%02d".format(j.first,j.second,j.third) }
+private fun JSONArray.toObjects(): List<JSONObject> = List(length()) { getJSONObject(it) }
 
 @Composable
 fun DastyarApp() {
