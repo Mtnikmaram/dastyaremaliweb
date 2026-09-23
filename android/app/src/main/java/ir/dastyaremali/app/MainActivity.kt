@@ -176,45 +176,88 @@ fun Transactions(modifier: Modifier) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var data by remember { mutableStateOf(listOf<JSONObject>()) }
+    var accounts by remember { mutableStateOf(listOf<JSONObject>()) }
+    var categories by remember { mutableStateOf(listOf<JSONObject>()) }
     var show by remember { mutableStateOf(false) }
-    var amount by remember { mutableStateOf("") }
     var error by remember { mutableStateOf("") }
     fun load() { scope.launch { try {
-        val a = JSONArray(call(context, "/api/transactions/"))
-        data = List(a.length()) { a.getJSONObject(it) }
+        data = JSONArray(call(context, "/api/transactions/")).toObjects()
+        accounts = JSONArray(call(context, "/api/accounts/")).toObjects()
+        categories = JSONArray(call(context, "/api/categories/")).toObjects()
     } catch(e: Exception) { error = e.message ?: "خطا" } } }
     LaunchedEffect(Unit) { load() }
     Column(modifier.fillMaxSize().padding(16.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("تراکنش‌ها", style = MaterialTheme.typography.headlineSmall)
-            Button(onClick = { amount = ""; error = ""; show = true }) { Text("ثبت") }
+            Button(onClick = { show = true }) { Text("تراکنش جدید") }
         }
         if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
-        LazyColumn {
-            items(data) { t ->
-                ListItem(
-                    headlineContent = { Text(if (t.optString("transaction_type") == "INCOME") "درآمد" else "هزینه") },
-                    supportingContent = { Text(t.optString("description")) },
-                    trailingContent = { Text(money(t.opt("amount"))) }
-                )
-                HorizontalDivider()
-            }
-        }
+        LazyColumn { items(data) { t ->
+            ListItem(
+                headlineContent = { Text(if (t.optString("transaction_type") == "INCOME") "درآمد" else "هزینه") },
+                supportingContent = { Text(t.optString("description").ifBlank { t.optString("date") }) },
+                trailingContent = { Text(money(t.opt("amount"))) }
+            )
+            HorizontalDivider()
+        } }
     }
-    if (show) {
-        AlertDialog(onDismissRequest = { show = false },
-            title = { Text("ثبت هزینه") },
-            text = { AmountField("مبلغ", amount) { amount = it } },
-            confirmButton = { Button(onClick = {
-                scope.launch { try {
-                    val body = JSONObject().put("amount", amount.toLongOrNull() ?: 0).put("transaction_type", "EXPENSE").put("date", today())
-                    call(context, "/api/transactions/", "POST", body.toString()); show = false; load()
-                } catch(e: Exception) { error = e.message ?: "خطا"; show = false } }
-            }) { Text("ثبت") } },
-            dismissButton = { TextButton(onClick = { show = false }) { Text("انصراف") } })
+    if (show) TransactionDialog(accounts, categories, { show = false }, { load() })
+}
+
+@Composable
+fun TransactionDialog(accounts: List<JSONObject>, categories: List<JSONObject>, onClose: () -> Unit, onSaved: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var type by remember { mutableStateOf("EXPENSE") }
+    var amount by remember { mutableStateOf("") }
+    var account by remember { mutableStateOf(accounts.firstOrNull()?.optInt("id", 0) ?: 0) }
+    var category by remember { mutableStateOf(0) }
+    var description by remember { mutableStateOf("") }
+    var date by remember { mutableStateOf(today()) }
+    var error by remember { mutableStateOf("") }
+    AlertDialog(onDismissRequest = onClose, title = { Text(if (type == "INCOME") "ثبت درآمد" else "ثبت هزینه") }, text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row {
+                FilterChip(selected = type == "EXPENSE", onClick = { type = "EXPENSE"; category = 0 }, label = { Text("هزینه") })
+                Spacer(Modifier.width(8.dp))
+                FilterChip(selected = type == "INCOME", onClick = { type = "INCOME"; category = 0 }, label = { Text("درآمد") })
+            }
+            AmountField("مبلغ", amount) { amount = it }
+            SimpleSelector("حساب", accounts, account) { account = it }
+            SimpleSelector("دسته‌بندی", categories.filter { it.optString("category_type") == type }, category) { category = it }
+            TextField(description, { description = it }, label = { Text("توضیح") }, modifier = Modifier.fillMaxWidth())
+            OutlinedButton(onClick = { pickDate(context, date) { date = it } }, modifier = Modifier.fillMaxWidth()) { Text("تاریخ: " + date) }
+            if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
+        }
+    }, confirmButton = {
+        Button(onClick = { scope.launch { try {
+            val n = amount.toLongOrNull() ?: 0
+            if (n <= 0 || account == 0 || category == 0) error = "مبلغ، حساب و دسته‌بندی را کامل کنید"
+            else {
+                val body = JSONObject().put("account", account).put("category", category).put("transaction_type", type).put("amount", n).put("date", date).put("description", description.trim())
+                call(context, "/api/transactions/", "POST", body.toString())
+                onClose(); onSaved()
+            }
+        } catch(e: Exception) { error = e.message ?: "خطا" } } }) { Text("ثبت") }
+    }, dismissButton = { TextButton(onClick = onClose) { Text("انصراف") } })
+}
+
+@Composable
+fun SimpleSelector(label: String, items: List<JSONObject>, selected: Int, onSelected: (Int) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    val name = items.firstOrNull { it.optInt("id") == selected }?.optString("name") ?: "انتخاب کنید"
+    Box {
+        OutlinedButton(onClick = { open = true }, modifier = Modifier.fillMaxWidth()) { Text(label + ": " + name) }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            items.forEach { item -> DropdownMenuItem(text = { Text(item.optString("name")) }, onClick = { onSelected(item.optInt("id")); open = false }) }
+        }
     }
 }
 
+@Composable
+fun pickDateButton(context: Context, date: String, onDate: (String) -> Unit) {
+    OutlinedButton(onClick = { pickDate(context, date, onDate) }, modifier = Modifier.fillMaxWidth()) { Text("تاریخ: " + date) }
+}
 @Composable
 fun AmountField(label: String, value: String, change: (String) -> Unit) {
     OutlinedTextField(value, { change(it.filter(Char::isDigit)) }, label = { Text(label) },
