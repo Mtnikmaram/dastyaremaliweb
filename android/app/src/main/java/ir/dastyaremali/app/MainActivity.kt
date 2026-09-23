@@ -205,21 +205,26 @@ fun Home(modifier: Modifier, logout: () -> Unit) {
     val context = LocalContext.current
     var d by remember { mutableStateOf<JSONObject?>(null) }
     var error by remember { mutableStateOf("") }
-
     LaunchedEffect(Unit) {
         try { d = JSONObject(call(context, "/api/dashboard/")) }
         catch (e: Exception) { error = e.message ?: "خطا" }
     }
 
-    val teal = Color(0xFF0F766E)
-    val tealLight = Color(0xFFE6F4F1)
-    val ink = Color(0xFF17211F)
-    val muted = Color(0xFF6B7A76)
+    val p = Color(0xFF0F766E)
+    val p2 = Color(0xFF115E59)
+    val bg = Color(0xFFF5F8F7)
+    val card = Color.White
+    val text = Color(0xFF17211F)
+    val muted = Color(0xFF71807B)
+    val line = Color(0xFFE1E9E6)
+    val good = Color(0xFF15803D)
+    val danger = Color(0xFFDC2626)
+    val warn = Color(0xFFB45309)
 
     LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        modifier = modifier.fillMaxSize().background(bg),
+        contentPadding = PaddingValues(13.dp, 18.dp, 13.dp, 24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
             Row(
@@ -228,118 +233,101 @@ fun Home(modifier: Modifier, logout: () -> Unit) {
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
             ) {
                 Column {
-                    Text("سلام 👋", style = MaterialTheme.typography.titleMedium, color = muted)
-                    Spacer(Modifier.height(2.dp))
-                    Text("داشبورد مالی", style = MaterialTheme.typography.headlineSmall, color = ink)
+                    Text("داشبورد مالی", style = MaterialTheme.typography.headlineSmall, color = text)
+                    Text("همه اعداد از موتور مالی Django می‌آیند.", style = MaterialTheme.typography.bodySmall, color = muted)
                 }
-                OutlinedButton(onClick = logout) { Text("خروج") }
+                TextButton(onClick = logout) { Text("خروج", color = muted) }
             }
         }
 
-        if (error.isNotBlank()) {
-            item { Text(error, color = MaterialTheme.colorScheme.error) }
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = { context.startActivity(android.content.Intent(context, MainActivity::class.java)) },
+                    colors = ButtonDefaults.buttonColors(containerColor = p),
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier.weight(1f)
+                ) { Text("＋ ثبت درآمد") }
+                OutlinedButton(
+                    onClick = { context.startActivity(android.content.Intent(context, MainActivity::class.java)) },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = danger),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE8B5B5)),
+                    shape = MaterialTheme.shapes.medium,
+                    modifier = Modifier.weight(1f)
+                ) { Text("− ثبت هزینه") }
+            }
         }
+
+        if (error.isNotBlank()) item { Text(error, color = danger) }
 
         d?.let { data ->
             item {
                 Card(
                     Modifier.fillMaxWidth(),
                     shape = MaterialTheme.shapes.large,
-                    colors = CardDefaults.cardColors(containerColor = teal)
+                    colors = CardDefaults.cardColors(containerColor = p2),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                 ) {
                     Column(Modifier.padding(20.dp)) {
-                        Text("موجودی فعلی", color = Color.White.copy(alpha = .78f))
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            money(data.opt("current_balance")),
-                            style = MaterialTheme.typography.headlineMedium,
-                            color = Color.White
-                        )
-                        Spacer(Modifier.height(16.dp))
+                        Text("موجودی فعلی", color = Color(0xFFCCE6E2), style = MaterialTheme.typography.labelMedium)
+                        Text(money(data.opt("current_balance")) + " تومان", color = Color.White, style = MaterialTheme.typography.headlineMedium)
+                        Spacer(Modifier.height(18.dp))
+                        Text("قابل خرج کردن امن", color = Color(0xFFCCE6E2), style = MaterialTheme.typography.labelMedium)
+                        Text(money(data.opt("safe_to_spend")) + " تومان", color = Color.White, style = MaterialTheme.typography.headlineSmall)
+                        Spacer(Modifier.height(14.dp))
+                        HorizontalDivider(color = Color.White.copy(alpha = .2f))
+                        Spacer(Modifier.height(10.dp))
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Column(Modifier.weight(1f)) {
-                                Text("قابل خرج امن", color = Color.White.copy(alpha = .72f))
-                                Text(money(data.opt("safe_to_spend")), color = Color.White, style = MaterialTheme.typography.titleMedium)
-                            }
-                            Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
-                                Text("وضعیت", color = Color.White.copy(alpha = .72f))
-                                Text(
-                                    when (data.optString("risk_level")) {
-                                        "DANGER" -> "نیاز به توجه"
-                                        "WARNING" -> "نیاز به مدیریت"
-                                        else -> "پایدار"
-                                    },
-                                    color = Color.White,
-                                    style = MaterialTheme.typography.titleMedium
-                                )
-                            }
+                            Text(
+                                when(data.optString("risk_level")) {
+                                    "SAFE" -> "وضعیت خوب"
+                                    "WARNING" -> "نیازمند توجه"
+                                    else -> "وضعیت بحرانی"
+                                },
+                                color = Color.White,
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                            Text(fa(data.opt("days_remaining").toString()) + " روز باقی‌مانده", color = Color.White, style = MaterialTheme.typography.labelMedium)
                         }
                     }
                 }
             }
 
-            item {
-                Text("خلاصه این ماه", style = MaterialTheme.typography.titleMedium, color = ink)
-            }
-
-            item {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    DashboardMetric("درآمد", money(data.opt("monthly_income")), "↑", tealLight, teal, Modifier.weight(1f))
-                    DashboardMetric("هزینه", money(data.opt("monthly_expense")), "↓", Color(0xFFFFF0ED), Color(0xFFC2412D), Modifier.weight(1f))
-                }
-            }
-
-            item {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    DashboardMetric("کل بدهی", money(data.opt("total_debt")), "●", Color(0xFFFFF7E6), Color(0xFF9A6700), Modifier.weight(1f))
-                    DashboardMetric("تعهدات", money(data.opt("total_commitments")), "◆", Color(0xFFF1EEFF), Color(0xFF6D5BD0), Modifier.weight(1f))
-                }
-            }
+            item { Text("این ماه", style = MaterialTheme.typography.titleMedium, color = text) }
 
             item {
                 Card(
                     Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.large
+                    shape = MaterialTheme.shapes.large,
+                    colors = CardDefaults.cardColors(containerColor = card),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, line)
                 ) {
-                    Column(Modifier.padding(18.dp)) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("وضعیت مالی", style = MaterialTheme.typography.titleMedium, color = ink)
-                            Text(
-                                when (data.optString("risk_level")) {
-                                    "DANGER" -> "پرریسک"
-                                    "WARNING" -> "هشدار"
-                                    else -> "مناسب"
-                                },
-                                color = when (data.optString("risk_level")) {
-                                    "DANGER" -> Color(0xFFC2412D)
-                                    "WARNING" -> Color(0xFF9A6700)
-                                    else -> teal
-                                }
-                            )
+                    Column(Modifier.padding(19.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            DashboardMetric("درآمد", money(data.opt("monthly_income")), "↑", Color(0xFFECFDF3), good, Modifier.weight(1f))
+                            DashboardMetric("هزینه", money(data.opt("monthly_expense")), "↓", Color(0xFFFEF2F2), danger, Modifier.weight(1f))
+                            DashboardMetric("خالص", money(data.opt("net_monthly_cashflow")), "=", Color(0xFFF2F6F5), text, Modifier.weight(1f))
                         }
-                        Spacer(Modifier.height(10.dp))
-                        LinearProgressIndicator(
-                            progress = {
-                                when (data.optString("risk_level")) {
-                                    "DANGER" -> .25f
-                                    "WARNING" -> .55f
-                                    else -> .85f
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            color = teal,
-                            trackColor = tealLight
-                        )
-                        Spacer(Modifier.height(10.dp))
-                        Text(
-                            when (data.optString("risk_level")) {
-                                "DANGER" -> "تعهدات و بدهی‌ها را با دقت بیشتری بررسی کنید."
-                                "WARNING" -> "قبل از هزینه‌های بزرگ، تعهدات پیش‌رو را بررسی کنید."
-                                else -> "جریان مالی شما در وضعیت متعادل‌تری قرار دارد."
-                            },
-                            color = muted
-                        )
+                        Spacer(Modifier.height(12.dp))
+                        HorizontalDivider(color = line)
+                        FinanceRow("کل بدهی", money(data.opt("total_debt")) + " تومان", text, muted)
                     }
+                }
+            }
+
+            item {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    InfoCard(
+                        "تعهدات",
+                        listOf(
+                            "معوق" to money(data.opt("overdue_commitments")) + " تومان",
+                            "این ماه" to money(data.opt("current_month_commitments")) + " تومان",
+                            "ماه بعد" to money(data.opt("next_month_commitments")) + " تومان",
+                            "آینده" to money(data.opt("future_commitments")) + " تومان"
+                        ),
+                        Modifier.weight(1f),
+                        card, line, text, muted, danger
+                    )
                 }
             }
 
@@ -347,32 +335,58 @@ fun Home(modifier: Modifier, logout: () -> Unit) {
                 Card(
                     Modifier.fillMaxWidth(),
                     shape = MaterialTheme.shapes.large,
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF7FAF9))
+                    colors = CardDefaults.cardColors(containerColor = card),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, line)
                 ) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(18.dp),
-                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-                    ) {
-                        Surface(
-                            shape = MaterialTheme.shapes.medium,
-                            color = tealLight
-                        ) {
-                            Text("✓", modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp), color = teal, style = MaterialTheme.typography.titleLarge)
-                        }
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text("پیشنهاد دستیار", style = MaterialTheme.typography.titleMedium, color = ink)
-                            Text(
-                                "برای تصمیم‌های مالی، موجودی امن و تعهدات را همزمان در نظر بگیرید.",
-                                color = muted
-                            )
-                        }
+                    Column(Modifier.padding(19.dp)) {
+                        Text("پیش‌بینی", style = MaterialTheme.typography.titleMedium, color = text)
+                        FinanceRow("بودجه امن روزانه", money(data.opt("daily_safe_budget")) + " تومان", text, muted)
+                        FinanceRow("خرج برآوردی باقی‌مانده", money(data.opt("projected_remaining_spend")) + " تومان", text, muted)
+                        FinanceRow("موجودی پایان ماه", money(data.opt("projected_month_end_balance")) + " تومان", text, muted)
                     }
                 }
             }
         } ?: item {
             Box(Modifier.fillMaxWidth().height(260.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
-                CircularProgressIndicator(color = teal)
+                CircularProgressIndicator(color = p)
+            }
+        }
+    }
+}
+
+@Composable
+fun FinanceRow(label: String, value: String, valueColor: Color, muted: Color) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 10.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label, color = muted, style = MaterialTheme.typography.bodySmall)
+        Text(value, color = valueColor, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@Composable
+fun InfoCard(
+    title: String,
+    rows: List<Pair<String,String>>,
+    modifier: Modifier,
+    background: Color,
+    border: Color,
+    text: Color,
+    muted: Color,
+    danger: Color
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = background),
+        border = androidx.compose.foundation.BorderStroke(1.dp, border)
+    ) {
+        Column(Modifier.padding(19.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, color = text)
+            rows.forEachIndexed { i, row ->
+                FinanceRow(row.first, row.second, if (i == 0) danger else text, muted)
+                if (i < rows.lastIndex) HorizontalDivider(color = border)
             }
         }
     }
