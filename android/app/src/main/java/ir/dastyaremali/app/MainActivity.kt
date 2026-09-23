@@ -269,18 +269,64 @@ fun AmountField(label: String, value: String, change: (String) -> Unit) {
 @Composable
 fun Accounts(modifier: Modifier) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var data by remember { mutableStateOf(listOf<JSONObject>()) }
+    var show by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
-    LaunchedEffect(Unit) { try {
-        val a = JSONArray(call(context, "/api/accounts/")); data = List(a.length()) { a.getJSONObject(it) }
-    } catch(e: Exception) { error = e.message ?: "خطا" } }
+    fun load() { scope.launch { try { data = JSONArray(call(context, "/api/accounts/")).toObjects() } catch(e: Exception) { error = e.message ?: "خطا" } } }
+    LaunchedEffect(Unit) { load() }
     Column(modifier.fillMaxSize().padding(16.dp)) {
-        Text("حساب‌ها", style = MaterialTheme.typography.headlineSmall)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("حساب‌ها", style = MaterialTheme.typography.headlineSmall)
+            Button(onClick = { show = true }) { Text("حساب جدید") }
+        }
         if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
-        LazyColumn { items(data) { a -> ListItem(headlineContent={Text(a.optString("name"))}, trailingContent={Text(money(a.opt("initial_balance")))}) } }
+        LazyColumn { items(data) { a ->
+            ListItem(headlineContent = { Text(a.optString("name")) }, supportingContent = { Text(a.optString("account_type")) }, trailingContent = { Text(money(a.opt("initial_balance"))) })
+            HorizontalDivider()
+        } }
     }
+    if (show) AccountDialog({ show = false }, { load() })
 }
 
+@Composable
+fun AccountDialog(onClose: () -> Unit, onSaved: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var name by remember { mutableStateOf("") }
+    var balance by remember { mutableStateOf("") }
+    var type by remember { mutableStateOf("BANK") }
+    var error by remember { mutableStateOf("") }
+    AlertDialog(onDismissRequest = onClose, title = { Text("حساب جدید") }, text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextField(name, { name = it }, label = { Text("نام حساب") }, modifier = Modifier.fillMaxWidth())
+            AmountField("موجودی اولیه", balance) { balance = it }
+            SimpleChoice("نوع حساب", listOf("BANK" to "بانک", "CASH" to "نقدی", "WALLET" to "کیف پول", "OTHER" to "سایر"), type) { type = it }
+            if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
+        }
+    }, confirmButton = {
+        Button(onClick = { scope.launch { try {
+            if (name.trim().isBlank()) error = "نام حساب را وارد کنید"
+            else {
+                val body = JSONObject().put("name", name.trim()).put("account_type", type).put("initial_balance", balance.toLongOrNull() ?: 0).put("is_active", true)
+                call(context, "/api/accounts/", "POST", body.toString())
+                onClose(); onSaved()
+            }
+        } catch(e: Exception) { error = e.message ?: "خطا" } } }) { Text("ثبت") }
+    }, dismissButton = { TextButton(onClick = onClose) { Text("انصراف") } })
+}
+
+@Composable
+fun SimpleChoice(label: String, choices: List<Pair<String,String>>, selected: String, onSelected: (String) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    val name = choices.firstOrNull { it.first == selected }?.second ?: "انتخاب کنید"
+    Box {
+        OutlinedButton(onClick = { open = true }, modifier = Modifier.fillMaxWidth()) { Text(label + ": " + name) }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            choices.forEach { pair -> DropdownMenuItem(text = { Text(pair.second) }, onClick = { onSelected(pair.first); open = false }) }
+        }
+    }
+}
 @Composable
 fun Loans(modifier: Modifier) {
     val context = LocalContext.current
