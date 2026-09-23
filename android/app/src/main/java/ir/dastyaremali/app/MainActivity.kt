@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -279,6 +280,7 @@ fun TransactionDialog(accounts: List<JSONObject>, categories: List<JSONObject>, 
     var description by remember { mutableStateOf("") }
     var date by remember { mutableStateOf(todayJalali()) }
     var error by remember { mutableStateOf("") }
+    var showDate by remember { mutableStateOf(false) }
     AlertDialog(onDismissRequest = onClose, title = { Text(if (type == "INCOME") "ثبت درآمد" else "ثبت هزینه") }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row {
@@ -290,7 +292,7 @@ fun TransactionDialog(accounts: List<JSONObject>, categories: List<JSONObject>, 
             SimpleSelector("حساب", accounts, account) { account = it }
             SimpleSelector("دسته‌بندی", categories.filter { it.optString("category_type") == type }, category) { category = it }
             TextField(description, { description = it }, label = { Text("توضیح") }, modifier = Modifier.fillMaxWidth())
-            OutlinedButton(onClick = { }, modifier = Modifier.fillMaxWidth()) { Text("تاریخ: " + date) }
+            OutlinedButton(onClick = { showDate = true }, modifier = Modifier.fillMaxWidth()) { Text("تاریخ: " + date) }
             if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
         }
     }, confirmButton = {
@@ -304,6 +306,7 @@ fun TransactionDialog(accounts: List<JSONObject>, categories: List<JSONObject>, 
             }
         } catch(e: Exception) { error = e.message ?: "خطا" } } }) { Text("ثبت") }
     }, dismissButton = { TextButton(onClick = onClose) { Text("انصراف") } })
+    if (showDate) JalaliDateDialog(date) { date = it; showDate = false }
 }
 
 @Composable
@@ -441,15 +444,16 @@ fun Loans(modifier: Modifier) {
 @Composable
 fun LoanDialog(onClose:()->Unit,onSaved:()->Unit){
     val context=LocalContext.current; val scope=rememberCoroutineScope()
-    var title by remember{mutableStateOf("")}; var principal by remember{mutableStateOf("")}; var installment by remember{mutableStateOf("")}; var count by remember{mutableStateOf("")}; var start by remember{mutableStateOf(todayJalali())}; var error by remember{mutableStateOf("")}
+    var showDate by remember{mutableStateOf(false)}; var title by remember{mutableStateOf("")}; var principal by remember{mutableStateOf("")}; var installment by remember{mutableStateOf("")}; var count by remember{mutableStateOf("")}; var start by remember{mutableStateOf(todayJalali())}; var error by remember{mutableStateOf("")}
     AlertDialog(onDismissRequest=onClose,title={Text("وام جدید")},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
         TextField(title,{title=it},label={Text("عنوان")},modifier=Modifier.fillMaxWidth())
         AmountField("مبلغ وام",principal){principal=it}; AmountField("مبلغ قسط",installment){installment=it}
         OutlinedTextField(count,{count=it.filter(Char::isDigit)},label={Text("تعداد اقساط")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),modifier=Modifier.fillMaxWidth())
-        OutlinedButton(onClick={JalaliDateDialog(start){start=it}},modifier=Modifier.fillMaxWidth()){Text("شروع: "+start)}
+        OutlinedButton(onClick={showDate=true},modifier=Modifier.fillMaxWidth()){Text("شروع: "+start)}
         if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
     }},confirmButton={Button(onClick={scope.launch{try{
         val body=JSONObject().put("title",title.trim()).put("loan_type","LOAN").put("principal_amount",principal.toLongOrNull()?:0).put("installment_amount",installment.toLongOrNull()?:0).put("total_installments",count.toIntOrNull()?:0).put("start_date",jalaliToApi(start)).put("is_active",true)
         if(title.isBlank()||principal.toLongOrNull()?:0<=0||installment.toLongOrNull()?:0<=0||count.toIntOrNull()?:0<1)error="اطلاعات وام را کامل کنید" else {call(context,"/api/loans/","POST",body.toString());onClose();onSaved()}
     }catch(e:Exception){error=e.message?:"خطا"}}}){Text("ثبت")}},dismissButton={TextButton(onClick=onClose){Text("انصراف")}})
+    if (showDate) JalaliDateDialog(start) { start = it; showDate = false }
 }
