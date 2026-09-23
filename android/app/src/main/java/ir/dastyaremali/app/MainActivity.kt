@@ -72,6 +72,20 @@ private fun today(): String {
     val c = Calendar.getInstance()
     return "%04d-%02d-%02d".format(c.get(Calendar.YEAR), c.get(Calendar.MONTH) + 1, c.get(Calendar.DAY_OF_MONTH))
 }
+private fun pickDate(context: Context, initial: String, onPicked: (String) -> Unit) {
+    val p = initial.split("-").mapNotNull { it.toIntOrNull() }
+    val c = Calendar.getInstance()
+    val y = p.getOrNull(0) ?: c.get(Calendar.YEAR)
+    val m = (p.getOrNull(1) ?: (c.get(Calendar.MONTH) + 1)) - 1
+    val d = p.getOrNull(2) ?: c.get(Calendar.DAY_OF_MONTH)
+    DatePickerDialog(context, { _, yy, mm, dd ->
+        onPicked("%04d-%02d-%02d".format(yy, mm + 1, dd))
+    }, y, m, d).show()
+}
+
+private fun JSONArray.toObjects(): List<JSONObject> =
+    List(length()) { getJSONObject(it) }
+
 
 @Composable
 fun DastyarApp() {
