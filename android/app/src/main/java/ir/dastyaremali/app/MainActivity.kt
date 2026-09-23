@@ -82,9 +82,16 @@ private suspend fun call(context: Context, path: String, method: String = "GET",
 }
 
 private fun money(v: Any?): String {
-    val n = v?.toString()?.toDoubleOrNull()?.toLong() ?: 0
+    val raw = v?.toString()?.replace(",", "")?.trim() ?: "0"
+    val n = raw.toDoubleOrNull()?.toLong() ?: 0L
     return NumberFormat.getNumberInstance(Locale("fa", "IR")).format(n) + " تومان"
 }
+private fun digitsOnly(s: String) = s.filter(Char::isDigit)
+private fun formatInputMoney(s: String): String {
+    val digits = digitsOnly(s).trimStart('0').ifBlank { "0" }
+    return NumberFormat.getNumberInstance(Locale.US).format(digits.toLongOrNull() ?: 0L)
+}
+private fun parseMoney(s: String) = digitsOnly(s).toLongOrNull() ?: 0L
 
 private fun gregorianToJalali(gy: Int, gm: Int, gd: Int): Triple<Int,Int,Int> {
     val gdm = intArrayOf(0,31,28,31,30,31,30,31,31,30,31,30,31)
@@ -203,22 +210,59 @@ fun Home(modifier: Modifier, logout: () -> Unit) {
     }
     Column(modifier.fillMaxSize().padding(16.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("داشبورد مالی", style = MaterialTheme.typography.headlineSmall)
+            Column {
+                Text("سلام 👋", style = MaterialTheme.typography.titleMedium)
+                Text("دستیار مالی", style = MaterialTheme.typography.headlineMedium)
+            }
             TextButton(onClick = logout) { Text("خروج") }
         }
+        Spacer(Modifier.height(16.dp))
         if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
         d?.let {
-            Card(Modifier.fillMaxWidth()) {
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFF0F766E))) {
                 Column(Modifier.padding(20.dp)) {
-                    Text("موجودی فعلی"); Text(money(it.opt("current_balance")), style = MaterialTheme.typography.headlineMedium)
-                    Spacer(Modifier.height(12.dp)); Text("قابل خرج امن"); Text(money(it.opt("safe_to_spend")), style = MaterialTheme.typography.titleLarge)
+                    Text("موجودی فعلی", color = Color.White.copy(alpha=.8f))
+                    Text(money(it.opt("current_balance")), style = MaterialTheme.typography.headlineMedium, color = Color.White)
+                    Spacer(Modifier.height(14.dp))
+                    Text("قابل خرج امن", color = Color.White.copy(alpha=.8f))
+                    Text(money(it.opt("safe_to_spend")), style = MaterialTheme.typography.titleLarge, color = Color.White)
                 }
             }
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                SummaryCard("درآمد ماه", money(it.opt("monthly_income")), Modifier.weight(1f))
+                SummaryCard("هزینه ماه", money(it.opt("monthly_expense")), Modifier.weight(1f))
+            }
             Spacer(Modifier.height(10.dp))
-            Text("درآمد این ماه: " + money(it.opt("monthly_income")))
-            Text("هزینه این ماه: " + money(it.opt("monthly_expense")))
-            Text("کل بدهی: " + money(it.opt("total_debt")))
-        } ?: CircularProgressIndicator()
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                SummaryCard("کل بدهی", money(it.opt("total_debt")), Modifier.weight(1f))
+                SummaryCard("تعهدات", money(it.opt("total_commitments")), Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(14.dp))
+            Text("وضعیت مالی", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(6.dp))
+            Card(Modifier.fillMaxWidth()) {
+                Text(
+                    when {
+                        it.optString("risk_level") == "DANGER" -> "نیاز به توجه فوری"
+                        it.optString("risk_level") == "WARNING" -> "نیاز به مدیریت بیشتر"
+                        else -> "وضعیت پایدار"
+                    },
+                    modifier = Modifier.padding(16.dp),
+                    style = MaterialTheme.typography.titleMedium
+                )
+            }
+        } ?: Box(Modifier.fillMaxWidth().padding(30.dp)) { CircularProgressIndicator() }
+    }
+}
+@Composable
+fun SummaryCard(title: String, value: String, modifier: Modifier) {
+    Card(modifier) {
+        Column(Modifier.padding(14.dp)) {
+            Text(title, style = MaterialTheme.typography.labelMedium)
+            Spacer(Modifier.height(5.dp))
+            Text(value, style = MaterialTheme.typography.titleMedium)
+        }
     }
 }
 
@@ -261,8 +305,8 @@ fun JalaliDateDialog(initial:String, onPicked:(String)->Unit) {
     var value by remember { mutableStateOf(initial) }
     if(show) AlertDialog(onDismissRequest={show=false}, title={Text("انتخاب تاریخ شمسی")}, text={
         Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
-            TextField(value,{ value=it.filter{ch->ch.isDigit()||ch=='/'} },label={Text("تاریخ (مثلاً 1405/07/01)")},singleLine=true,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),modifier=Modifier.fillMaxWidth())
-            Text("تاریخ را به صورت سال/ماه/روز وارد کنید.")
+            TextField(value,{ value=it.filter{ch->ch.isDigit()||ch=='/'} },label={Text("تاریخ شمسی")},singleLine=true,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),modifier=Modifier.fillMaxWidth())
+            Text("فرمت: سال/ماه/روز — مثال ۱۴۰۵/۰۷/۰۱")
         }
     },confirmButton={Button(onClick={if(value.matches(Regex("\\d{4}/\\d{1,2}/\\d{1,2}"))){onPicked(value);show=false}}){Text("تأیید")}},
       dismissButton={TextButton(onClick={show=false}){Text("انصراف")}})
@@ -296,7 +340,7 @@ fun TransactionDialog(accounts: List<JSONObject>, categories: List<JSONObject>, 
         }
     }, confirmButton = {
         Button(onClick = { scope.launch { try {
-            val n = amount.toLongOrNull() ?: 0
+            val n = parseMoney(amount)
             if (n <= 0 || account == 0 || category == 0) error = "مبلغ، حساب و دسته‌بندی را کامل کنید"
             else {
                 val body = JSONObject().put("account", account).put("category", category).put("transaction_type", type).put("amount", n).put("date", jalaliToApi(date)).put("description", description.trim())
@@ -322,7 +366,7 @@ fun SimpleSelector(label: String, items: List<JSONObject>, selected: Int, onSele
 
 @Composable
 fun AmountField(label: String, value: String, change: (String) -> Unit) {
-    OutlinedTextField(value, { change(it.filter(Char::isDigit)) }, label = { Text(label) },
+    OutlinedTextField(formatInputMoney(value), { change(digitsOnly(it)) }, label = { Text(label) },
         suffix = { Text("تومان") }, singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         modifier = Modifier.fillMaxWidth())
@@ -370,7 +414,7 @@ fun AccountDialog(onClose: () -> Unit, onSaved: () -> Unit) {
         Button(onClick = { scope.launch { try {
             if (name.trim().isBlank()) error = "نام حساب را وارد کنید"
             else {
-                val body = JSONObject().put("name", name.trim()).put("account_type", type).put("initial_balance", balance.toLongOrNull() ?: 0).put("is_active", true)
+                val body = JSONObject().put("name", name.trim()).put("account_type", type).put("initial_balance", parseMoney(balance)).put("is_active", true)
                 call(context, "/api/accounts/", "POST", body.toString())
                 onClose(); onSaved()
             }
@@ -414,7 +458,16 @@ fun Loans(modifier: Modifier) {
             else TextButton(onClick = { selected = null }) { Text("بازگشت") }
         }
         if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
-        if (selected == null) LazyColumn { items(loans) { loan ->
+        if (selected == null) {
+            if (loans.isEmpty()) {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(20.dp)) {
+                        Text("هنوز وامی ثبت نشده", style = MaterialTheme.typography.titleMedium)
+                        Text("برای ساخت برنامه اقساط، روی «وام جدید» بزنید.")
+                    }
+                }
+            }
+            LazyColumn { items(loans) { loan ->
             ListItem(headlineContent = { Text(loan.optString("title")) },
                 supportingContent = { Text("اصل: " + money(loan.opt("principal_amount")) + " | هر قسط: " + money(loan.opt("installment_amount"))) },
                 trailingContent = { TextButton(onClick = {
@@ -423,7 +476,9 @@ fun Loans(modifier: Modifier) {
                     catch (e: Exception) { error = e.message ?: "خطا" } }
                 }) { Text("اقساط") } })
             HorizontalDivider()
-        } } else LazyColumn { items(installments) { inst ->
+        } } else {
+            if (installments.isEmpty()) Text("برای این وام هنوز قسطی وجود ندارد.")
+            LazyColumn { items(installments) { inst ->
             val paid = inst.optString("status") == "PAID"
             ListItem(headlineContent = { Text("قسط " + inst.optInt("installment_number")) },
                 supportingContent = { Text("سررسید: " + apiToJalali(inst.optString("due_date")) + " | " + inst.optString("status")) },
@@ -438,20 +493,22 @@ fun Loans(modifier: Modifier) {
                 } })
             HorizontalDivider()
         } } }
+        }
     if (showNew) LoanDialog(onClose = { showNew = false }, onSaved = { showNew = false; load() })
 }
 @Composable
 fun LoanDialog(onClose:()->Unit,onSaved:()->Unit){
     val context=LocalContext.current; val scope=rememberCoroutineScope()
-    var showDate by remember{mutableStateOf(false)}; var title by remember{mutableStateOf("")}; var principal by remember{mutableStateOf("")}; var installment by remember{mutableStateOf("")}; var count by remember{mutableStateOf("")}; var start by remember{mutableStateOf(todayJalali())}; var error by remember{mutableStateOf("")}
+    var showDate by remember{mutableStateOf(false)}; var title by remember{mutableStateOf("")}; var principal by remember{mutableStateOf("")}; var installment by remember{mutableStateOf("")}; var count by remember{mutableStateOf("")}; var start by remember{mutableStateOf(todayJalali())}; var historyMode by remember{mutableStateOf("ALL_PAID")}; var error by remember{mutableStateOf("")}
     AlertDialog(onDismissRequest=onClose,title={Text("وام جدید")},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
         TextField(title,{title=it},label={Text("عنوان")},modifier=Modifier.fillMaxWidth())
         AmountField("مبلغ وام",principal){principal=it}; AmountField("مبلغ قسط",installment){installment=it}
         OutlinedTextField(count,{count=it.filter(Char::isDigit)},label={Text("تعداد اقساط")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),modifier=Modifier.fillMaxWidth())
         OutlinedButton(onClick={showDate=true},modifier=Modifier.fillMaxWidth()){Text("شروع: "+start)}
+        SimpleChoice("وضعیت اقساط گذشته", listOf("ALL_PAID" to "اقساط گذشته پرداخت شده", "OVERDUE_COUNT" to "تعدادی از اقساط گذشته باقی مانده"), historyMode) { historyMode = it }
         if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
     }},confirmButton={Button(onClick={scope.launch{try{
-        val body=JSONObject().put("title",title.trim()).put("loan_type","LOAN").put("principal_amount",principal.toLongOrNull()?:0).put("installment_amount",installment.toLongOrNull()?:0).put("total_installments",count.toIntOrNull()?:0).put("start_date",jalaliToApi(start)).put("is_active",true)
+        val body=JSONObject().put("title",title.trim()).put("loan_type","LOAN").put("principal_amount",parseMoney(principal)).put("installment_amount",parseMoney(installment)).put("total_installments",count.toIntOrNull()?:0).put("start_date",jalaliToApi(start)).put("is_active",true).put("history_mode",historyMode).put("overdue_count",if(historyMode=="OVERDUE_COUNT") (count.toIntOrNull() ?: 0) else 0)
         if(title.isBlank()||principal.toLongOrNull()?:0<=0||installment.toLongOrNull()?:0<=0||count.toIntOrNull()?:0<1)error="اطلاعات وام را کامل کنید" else {call(context,"/api/loans/","POST",body.toString());onClose();onSaved()}
     }catch(e:Exception){error=e.message?:"خطا"}}}){Text("ثبت")}},dismissButton={TextButton(onClick=onClose){Text("انصراف")}})
     if (showDate) JalaliDateDialog(start) { start = it; showDate = false }
