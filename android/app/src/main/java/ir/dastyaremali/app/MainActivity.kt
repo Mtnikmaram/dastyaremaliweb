@@ -579,20 +579,46 @@ fun Loans(modifier: Modifier) {
     var selected by remember { mutableStateOf<JSONObject?>(null) }
     var showNew by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
-    fun load() { scope.launch { try {
-        loans = JSONArray(call(context, "/api/loans/")).toObjects()
-        accounts = JSONArray(call(context, "/api/accounts/")).toObjects()
-        categories = JSONArray(call(context, "/api/categories/")).toObjects()
-        selected?.let { loan -> installments = JSONArray(call(context, "/api/installments/?loan=" + loan.optInt("id"))).toObjects() }
-    } catch (e: Exception) { error = e.message ?: "خطا" } } }
-    LaunchedEffect(Unit) { load() }
-    Column(modifier.fillMaxSize().padding(16.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(if (selected == null) "وام و اقساط" else selected!!.optString("title"), style = MaterialTheme.typography.headlineSmall)
-            if (selected == null) Button(onClick = { showNew = true }) { Text("وام جدید") }
-            else TextButton(onClick = { selected = null }) { Text("بازگشت") }
+
+    fun load() {
+        scope.launch {
+            try {
+                loans = JSONArray(call(context, "/api/loans/")).toObjects()
+                accounts = JSONArray(call(context, "/api/accounts/")).toObjects()
+                categories = JSONArray(call(context, "/api/categories/")).toObjects()
+                selected?.let { loan ->
+                    installments = JSONArray(
+                        call(context, "/api/installments/?loan=" + loan.optInt("id"))
+                    ).toObjects()
+                }
+            } catch (e: Exception) {
+                error = e.message ?: "خطا"
+            }
         }
-        if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
+    }
+
+    LaunchedEffect(Unit) { load() }
+
+    Column(modifier.fillMaxSize().padding(16.dp)) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                if (selected == null) "وام و اقساط" else selected!!.optString("title"),
+                style = MaterialTheme.typography.headlineSmall
+            )
+            if (selected == null) {
+                Button(onClick = { showNew = true }) { Text("وام جدید") }
+            } else {
+                TextButton(onClick = { selected = null }) { Text("بازگشت") }
+            }
+        }
+
+        if (error.isNotBlank()) {
+            Text(error, color = MaterialTheme.colorScheme.error)
+        }
+
         if (selected == null) {
             if (loans.isEmpty()) {
                 Card(Modifier.fillMaxWidth()) {
@@ -602,35 +628,113 @@ fun Loans(modifier: Modifier) {
                     }
                 }
             }
-            LazyColumn { items(loans) { loan ->
-            ListItem(headlineContent = { Text(loan.optString("title")) },
-                supportingContent = { Text("اصل: " + money(loan.opt("principal_amount")) + " | هر قسط: " + money(loan.opt("installment_amount"))) },
-                trailingContent = { TextButton(onClick = {
-                    selected = loan
-                    scope.launch { try { installments = JSONArray(call(context, "/api/installments/?loan=" + loan.optInt("id"))).toObjects() }
-                    catch (e: Exception) { error = e.message ?: "خطا" } }
-                }) { Text("اقساط") } })
-            HorizontalDivider()
-        } } else {
-            if (installments.isEmpty()) Text("برای این وام هنوز قسطی وجود ندارد.")
-            LazyColumn { items(installments) { inst ->
-            val paid = inst.optString("status") == "PAID"
-            ListItem(headlineContent = { Text("قسط " + inst.optInt("installment_number")) },
-                supportingContent = { Text("سررسید: " + apiToJalali(inst.optString("due_date")) + " | " + inst.optString("status")) },
-                trailingContent = { androidx.compose.foundation.layout.Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
-                    Text(money(inst.opt("amount")))
-                    if (!paid) TextButton(onClick = { scope.launch { try {
-                        val aid = accounts.firstOrNull()?.optInt("id", 0) ?: 0
-                        val cid = categories.firstOrNull { it.optString("category_type") == "EXPENSE" }?.optInt("id", 0) ?: 0
-                        if (aid == 0 || cid == 0) error = "ابتدا یک حساب و دسته‌بندی هزینه داشته باشید"
-                        else { call(context, "/api/installments/" + inst.optInt("id") + "/pay/", "POST", JSONObject().put("amount", inst.opt("amount")).put("account_id", aid).put("category_id", cid).put("paid_date", todayApi()).toString()); load() }
-                    } catch (e: Exception) { error = e.message ?: "خطا" } } }) { Text("پرداخت") }
-                } })
-            HorizontalDivider()
-        } } }
+
+            LazyColumn {
+                items(loans) { loan ->
+                    ListItem(
+                        headlineContent = { Text(loan.optString("title")) },
+                        supportingContent = {
+                            Text(
+                                "اصل: " + money(loan.opt("principal_amount")) +
+                                    " | هر قسط: " + money(loan.opt("installment_amount"))
+                            )
+                        },
+                        trailingContent = {
+                            TextButton(onClick = {
+                                selected = loan
+                                scope.launch {
+                                    try {
+                                        installments = JSONArray(
+                                            call(
+                                                context,
+                                                "/api/installments/?loan=" + loan.optInt("id")
+                                            )
+                                        ).toObjects()
+                                    } catch (e: Exception) {
+                                        error = e.message ?: "خطا"
+                                    }
+                                }
+                            }) {
+                                Text("اقساط")
+                            }
+                        }
+                    )
+                    HorizontalDivider()
+                }
+            }
+        } else {
+            if (installments.isEmpty()) {
+                Text("برای این وام هنوز قسطی وجود ندارد.")
+            }
+
+            LazyColumn {
+                items(installments) { inst ->
+                    val paid = inst.optString("status") == "PAID"
+                    ListItem(
+                        headlineContent = {
+                            Text("قسط " + inst.optInt("installment_number"))
+                        },
+                        supportingContent = {
+                            Text(
+                                "سررسید: " + apiToJalali(inst.optString("due_date")) +
+                                    " | " + inst.optString("status")
+                            )
+                        },
+                        trailingContent = {
+                            Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
+                                Text(money(inst.opt("amount")))
+                                if (!paid) {
+                                    TextButton(onClick = {
+                                        scope.launch {
+                                            try {
+                                                val aid = accounts.firstOrNull()?.optInt("id", 0) ?: 0
+                                                val cid = categories.firstOrNull {
+                                                    it.optString("category_type") == "EXPENSE"
+                                                }?.optInt("id", 0) ?: 0
+                                                if (aid == 0 || cid == 0) {
+                                                    error = "ابتدا یک حساب و دسته‌بندی هزینه داشته باشید"
+                                                } else {
+                                                    call(
+                                                        context,
+                                                        "/api/installments/" + inst.optInt("id") + "/pay/",
+                                                        "POST",
+                                                        JSONObject()
+                                                            .put("amount", inst.opt("amount"))
+                                                            .put("account_id", aid)
+                                                            .put("category_id", cid)
+                                                            .put("paid_date", todayApi())
+                                                            .toString()
+                                                    )
+                                                    load()
+                                                }
+                                            } catch (e: Exception) {
+                                                error = e.message ?: "خطا"
+                                            }
+                                        }
+                                    }) {
+                                        Text("پرداخت")
+                                    }
+                                }
+                            }
+                        }
+                    )
+                    HorizontalDivider()
+                }
+            }
         }
-    if (showNew) LoanDialog(onClose = { showNew = false }, onSaved = { showNew = false; load() })
+    }
+
+    if (showNew) {
+        LoanDialog(
+            onClose = { showNew = false },
+            onSaved = {
+                showNew = false
+                load()
+            }
+        )
+    }
 }
+
 @Composable
 fun LoanDialog(onClose:()->Unit,onSaved:()->Unit){
     val context=LocalContext.current; val scope=rememberCoroutineScope()
