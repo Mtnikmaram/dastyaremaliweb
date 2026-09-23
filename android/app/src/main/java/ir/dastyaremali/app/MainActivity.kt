@@ -163,7 +163,7 @@ fun LoginScreen(done: () -> Unit) {
                         JSONObject().put("username", user.trim()).put("password", pass).put("first_name", name.trim()).toString())
                     val r = JSONObject(call(context, "/api/auth/token/", "POST",
                         JSONObject().put("username", user.trim()).put("password", pass).toString()))
-                    context.saveToken(r.getString("access")); done()
+                    context.saveTokens(r.getString("access"), r.optString("refresh").ifBlank { null }); done()
                 } catch (e: Exception) { error = e.message ?: "خطا" }
                 busy = false
             }
@@ -256,6 +256,19 @@ fun Transactions(modifier: Modifier) {
 }
 
 @Composable
+fun JalaliDateDialog(initial:String, onPicked:(String)->Unit) {
+    var show by remember { mutableStateOf(true) }
+    var value by remember { mutableStateOf(initial) }
+    if(show) AlertDialog(onDismissRequest={show=false}, title={Text("انتخاب تاریخ شمسی")}, text={
+        Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
+            TextField(value,{ value=it.filter{ch->ch.isDigit()||ch=='/'} },label={Text("تاریخ (مثلاً 1405/07/01)")},singleLine=true,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),modifier=Modifier.fillMaxWidth())
+            Text("تاریخ را به صورت سال/ماه/روز وارد کنید.")
+        }
+    },confirmButton={Button(onClick={if(value.matches(Regex("\\d{4}/\\d{1,2}/\\d{1,2}"))){onPicked(value);show=false}}){Text("تأیید")}},
+      dismissButton={TextButton(onClick={show=false}){Text("انصراف")}})
+}
+
+@Composable
 fun TransactionDialog(accounts: List<JSONObject>, categories: List<JSONObject>, onClose: () -> Unit, onSaved: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -264,7 +277,7 @@ fun TransactionDialog(accounts: List<JSONObject>, categories: List<JSONObject>, 
     var account by remember { mutableStateOf(accounts.firstOrNull()?.optInt("id", 0) ?: 0) }
     var category by remember { mutableStateOf(0) }
     var description by remember { mutableStateOf("") }
-    var date by remember { mutableStateOf(today()) }
+    var date by remember { mutableStateOf(todayJalali()) }
     var error by remember { mutableStateOf("") }
     AlertDialog(onDismissRequest = onClose, title = { Text(if (type == "INCOME") "ثبت درآمد" else "ثبت هزینه") }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -277,7 +290,7 @@ fun TransactionDialog(accounts: List<JSONObject>, categories: List<JSONObject>, 
             SimpleSelector("حساب", accounts, account) { account = it }
             SimpleSelector("دسته‌بندی", categories.filter { it.optString("category_type") == type }, category) { category = it }
             TextField(description, { description = it }, label = { Text("توضیح") }, modifier = Modifier.fillMaxWidth())
-            OutlinedButton(onClick = { pickDate(context, date) { date = it } }, modifier = Modifier.fillMaxWidth()) { Text("تاریخ: " + date) }
+            OutlinedButton(onClick = { JalaliDateDialog(date) { date = it } }, modifier = Modifier.fillMaxWidth()) { Text("تاریخ: " + date) }
             if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
         }
     }, confirmButton = {
@@ -285,7 +298,7 @@ fun TransactionDialog(accounts: List<JSONObject>, categories: List<JSONObject>, 
             val n = amount.toLongOrNull() ?: 0
             if (n <= 0 || account == 0 || category == 0) error = "مبلغ، حساب و دسته‌بندی را کامل کنید"
             else {
-                val body = JSONObject().put("account", account).put("category", category).put("transaction_type", type).put("amount", n).put("date", date).put("description", description.trim())
+                val body = JSONObject().put("account", account).put("category", category).put("transaction_type", type).put("amount", n).put("date", jalaliToApi(date)).put("description", description.trim())
                 call(context, "/api/transactions/", "POST", body.toString())
                 onClose(); onSaved()
             }
