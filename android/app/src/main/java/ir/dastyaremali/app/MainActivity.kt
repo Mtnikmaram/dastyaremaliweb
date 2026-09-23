@@ -195,13 +195,13 @@ fun AppShell(onLogout: () -> Unit) {
             1 -> Transactions(Modifier.padding(p))
             2 -> Loans(Modifier.padding(p))
             3 -> Accounts(Modifier.padding(p))
-            else -> Home(Modifier.padding(p), onLogout)
+            else -> Home(Modifier.padding(p), onLogout, { page = 1 })
         }
     }
 }
 
 @Composable
-fun Home(modifier: Modifier, logout: () -> Unit) {
+fun Home(modifier: Modifier, logout: () -> Unit, openTransactions: () -> Unit) {
     val context = LocalContext.current
     var d by remember { mutableStateOf<JSONObject?>(null) }
     var error by remember { mutableStateOf("") }
@@ -243,7 +243,7 @@ fun Home(modifier: Modifier, logout: () -> Unit) {
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
-                    onClick = { context.startActivity(android.content.Intent(context, MainActivity::class.java)) },
+                    onClick = openTransactions,
                     colors = ButtonDefaults.buttonColors(containerColor = p),
                     shape = MaterialTheme.shapes.medium,
                     modifier = Modifier.weight(1f)
