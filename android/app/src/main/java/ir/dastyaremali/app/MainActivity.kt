@@ -187,24 +187,38 @@ fun LoginScreen(done: () -> Unit) {
 @Composable
 fun AppShell(onLogout: () -> Unit) {
     var page by remember { mutableStateOf(0) }
+    var quickTransactionType by remember { mutableStateOf<String?>(null) }
     Scaffold(bottomBar = {
         NavigationBar {
-            listOf("خانه", "تراکنش", "اقساط", "حساب").forEachIndexed { i, title ->
-                NavigationBarItem(selected = page == i, onClick = { page = i }, icon = {}, label = { Text(title) })
+            listOf(
+                "خانه" to "⌂",
+                "تراکنش" to "↕",
+                "اقساط" to "▣",
+                "حساب" to "●"
+            ).forEachIndexed { i, item ->
+                NavigationBarItem(
+                    selected = page == i,
+                    onClick = { page = i; if (i != 1) quickTransactionType = null },
+                    icon = { Text(item.second, style = MaterialTheme.typography.titleMedium) },
+                    label = { Text(item.first) }
+                )
             }
         }
     }) { p ->
         when (page) {
-            1 -> Transactions(Modifier.padding(p))
+            1 -> Transactions(Modifier.padding(p), quickTransactionType, { quickTransactionType = null })
             2 -> Loans(Modifier.padding(p))
             3 -> Accounts(Modifier.padding(p))
-            else -> Home(Modifier.padding(p), onLogout, { page = 1 })
+            else -> Home(Modifier.padding(p), onLogout) { type ->
+                quickTransactionType = type
+                page = 1
+            }
         }
     }
 }
 
 @Composable
-fun Home(modifier: Modifier, logout: () -> Unit, openTransactions: () -> Unit) {
+fun Home(modifier: Modifier, logout: () -> Unit, openTransaction: (String) -> Unit) {
     val context = LocalContext.current
     var d by remember { mutableStateOf<JSONObject?>(null) }
     var error by remember { mutableStateOf("") }
@@ -246,13 +260,13 @@ fun Home(modifier: Modifier, logout: () -> Unit, openTransactions: () -> Unit) {
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
-                    onClick = openTransactions,
+                    onClick = { openTransaction("INCOME") },
                     colors = ButtonDefaults.buttonColors(containerColor = p),
                     shape = MaterialTheme.shapes.medium,
                     modifier = Modifier.weight(1f)
                 ) { Text("＋ ثبت درآمد") }
                 OutlinedButton(
-                    onClick = openTransactions,
+                    onClick = { openTransaction("EXPENSE") },
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = danger),
                     border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE8B5B5)),
                     shape = MaterialTheme.shapes.medium,
@@ -419,7 +433,7 @@ fun DashboardMetric(
 }
 
 @Composable
-fun Transactions(modifier: Modifier) {
+fun Transactions(modifier: Modifier, quickType: String? = null, onQuickTypeConsumed: () -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var data by remember { mutableStateOf(listOf<JSONObject>()) }
@@ -427,6 +441,7 @@ fun Transactions(modifier: Modifier) {
     var categories by remember { mutableStateOf(listOf<JSONObject>()) }
     var show by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
+    LaunchedEffect(quickType) { if (quickType != null) show = true }
     fun load() { scope.launch { try {
         data = JSONArray(call(context, "/api/transactions/")).toObjects()
         accounts = JSONArray(call(context, "/api/accounts/")).toObjects()
@@ -448,27 +463,31 @@ fun Transactions(modifier: Modifier) {
             HorizontalDivider()
         } }
     }
-    if (show) TransactionDialog(accounts, categories, { show = false }, { load() })
+    if (show) TransactionDialog(quickType, accounts, categories, { show = false; onQuickTypeConsumed() }, { load() })
 }
 
 @Composable
-fun JalaliDateDialog(initial:String, onPicked:(String)->Unit) {
-    var show by remember { mutableStateOf(true) }
-    var value by remember { mutableStateOf(initial) }
-    if(show) AlertDialog(onDismissRequest={show=false}, title={Text("انتخاب تاریخ شمسی")}, text={
-        Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
-            TextField(value,{ value=it.filter{ch->ch.isDigit()||ch=='/'} },label={Text("تاریخ شمسی")},singleLine=true,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),modifier=Modifier.fillMaxWidth())
-            Text("فرمت: سال/ماه/روز — مثال ۱۴۰۵/۰۷/۰۱")
-        }
-    },confirmButton={Button(onClick={if(value.matches(Regex("\\d{4}/\\d{1,2}/\\d{1,2}"))){onPicked(value);show=false}}){Text("تأیید")}},
-      dismissButton={TextButton(onClick={show=false}){Text("انصراف")}})
+fun JalaliDateDialog(initial: String, onPicked: (String) -> Unit) {
+    val context = LocalContext.current
+    val parts = initial.replace("-", "/").split("/").mapNotNull { it.toIntOrNull() }
+    val g = if (parts.size == 3) jalaliToGregorian(parts[0], parts[1], parts[2]) else {
+        val c = Calendar.getInstance()
+        Triple(c.get(Calendar.YEAR), c.get(Calendar.MONTH) + 1, c.get(Calendar.DAY_OF_MONTH))
+    }
+    DatePickerDialog(
+        context,
+        { _, year, month, day ->
+            onPicked(apiToJalali("%04d-%02d-%02d".format(year, month + 1, day)))
+        },
+        g.first, g.second - 1, g.third
+    ).show()
 }
 
 @Composable
-fun TransactionDialog(accounts: List<JSONObject>, categories: List<JSONObject>, onClose: () -> Unit, onSaved: () -> Unit) {
+fun TransactionDialog(initialType: String?, accounts: List<JSONObject>, categories: List<JSONObject>, onClose: () -> Unit, onSaved: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var type by remember { mutableStateOf("EXPENSE") }
+    var type by remember { mutableStateOf(initialType ?: "EXPENSE") }
     var amount by remember { mutableStateOf("") }
     var account by remember { mutableStateOf(accounts.firstOrNull()?.optInt("id", 0) ?: 0) }
     var category by remember { mutableStateOf(0) }
@@ -476,12 +495,11 @@ fun TransactionDialog(accounts: List<JSONObject>, categories: List<JSONObject>, 
     var date by remember { mutableStateOf(todayJalali()) }
     var error by remember { mutableStateOf("") }
     var showDate by remember { mutableStateOf(false) }
-    AlertDialog(onDismissRequest = onClose, title = { Text(if (type == "INCOME") "ثبت درآمد" else "ثبت هزینه") }, text = {
+    AlertDialog(onDismissRequest = onClose, title = { Text("تراکنش جدید") }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row {
-                FilterChip(selected = type == "EXPENSE", onClick = { type = "EXPENSE"; category = 0 }, label = { Text("هزینه") })
-                Spacer(Modifier.width(8.dp))
-                FilterChip(selected = type == "INCOME", onClick = { type = "INCOME"; category = 0 }, label = { Text("درآمد") })
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = type == "EXPENSE", onClick = { type = "EXPENSE"; category = 0 }, label = { Text("ثبت هزینه") })
+                FilterChip(selected = type == "INCOME", onClick = { type = "INCOME"; category = 0 }, label = { Text("ثبت درآمد") })
             }
             AmountField("مبلغ", amount) { amount = it }
             SimpleSelector("حساب", accounts, account) { account = it }
