@@ -1,17 +1,27 @@
 from pathlib import Path
-import re
 
 p = Path("android/app/src/main/java/ir/dastyaremali/app/MainActivity.kt")
 s = p.read_text()
 
-def sub(pattern, repl, count=1):
+def replace_once(old, new):
     global s
-    ns, n = re.subn(pattern, repl, s, count=count, flags=re.S)
-    if n != count:
-        raise SystemExit(f"Patch pattern not found: {pattern[:120]}")
-    s = ns
+    if old not in s:
+        raise SystemExit("Missing expected text: " + old[:100])
+    s = s.replace(old, new, 1)
 
-sub(r'fun AppShell\(onLogout: \(\) -> Unit\) \{.*?\n\}\n\n@Composable\nfun Home',
+def replace_block(start_marker, end_marker, new_block):
+    global s
+    start = s.find(start_marker)
+    if start < 0:
+        raise SystemExit("Missing start marker: " + start_marker)
+    end = s.find(end_marker, start)
+    if end < 0:
+        raise SystemExit("Missing end marker: " + end_marker)
+    s = s[:start] + new_block + s[end:]
+
+replace_block(
+    "fun AppShell(onLogout: () -> Unit) {",
+    "@Composable\nfun Home",
 '''fun AppShell(onLogout: () -> Unit) {
     var page by remember { mutableStateOf(0) }
     var quickTransactionType by remember { mutableStateOf<String?>(null) }
@@ -44,24 +54,25 @@ sub(r'fun AppShell\(onLogout: \(\) -> Unit\) \{.*?\n\}\n\n@Composable\nfun Home'
     }
 }
 
-@Composable
-fun Home''')
+''')
 
-sub(r'fun Home\(modifier: Modifier, logout: \(\) -> Unit, openTransactions: \(\) -> Unit\) \{',
-    'fun Home(modifier: Modifier, logout: () -> Unit, openTransaction: (String) -> Unit) {')
-sub(r'onClick = openTransactions,\n(\s*colors = ButtonDefaults\.buttonColors',
-    r'onClick = { openTransaction("INCOME") },\n\1colors = ButtonDefaults.buttonColors', count=1)
-sub(r'onClick = openTransactions,\n(\s*colors = ButtonDefaults\.outlinedButtonColors',
-    r'onClick = { openTransaction("EXPENSE") },\n\1colors = ButtonDefaults.outlinedButtonColors', count=1)
+replace_once("fun Home(modifier: Modifier, logout: () -> Unit, openTransactions: () -> Unit) {",
+            "fun Home(modifier: Modifier, logout: () -> Unit, openTransaction: (String) -> Unit) {")
+replace_once("onClick = openTransactions,\n                    colors = ButtonDefaults.buttonColors",
+            "onClick = { openTransaction(\"INCOME\") },\n                    colors = ButtonDefaults.buttonColors")
+replace_once("onClick = openTransactions,\n                    colors = ButtonDefaults.outlinedButtonColors",
+            "onClick = { openTransaction(\"EXPENSE\") },\n                    colors = ButtonDefaults.outlinedButtonColors")
 
-sub(r'fun Transactions\(modifier: Modifier\) \{',
-    'fun Transactions(modifier: Modifier, quickType: String? = null, onQuickTypeConsumed: () -> Unit = {}) {')
-sub(r'(var error by remember \{ mutableStateOf\("") \}\n)',
-    r'\1    LaunchedEffect(quickType) { if (quickType != null) show = true }\n', count=1)
-sub(r'if \(show\) TransactionDialog\(accounts, categories, \{ show = false \}, \{ load\(\) \}\)',
-    'if (show) TransactionDialog(quickType, accounts, categories, { show = false; onQuickTypeConsumed() }, { load() })')
+replace_once("fun Transactions(modifier: Modifier) {",
+            "fun Transactions(modifier: Modifier, quickType: String? = null, onQuickTypeConsumed: () -> Unit = {}) {")
+replace_once('    var error by remember { mutableStateOf("") }\n    fun load()',
+            '    var error by remember { mutableStateOf("") }\n    LaunchedEffect(quickType) { if (quickType != null) show = true }\n    fun load()')
+replace_once("if (show) TransactionDialog(accounts, categories, { show = false }, { load() })",
+            "if (show) TransactionDialog(quickType, accounts, categories, { show = false; onQuickTypeConsumed() }, { load() })")
 
-sub(r'@Composable\nfun JalaliDateDialog\(.*?\n\}\n\n@Composable\nfun TransactionDialog',
+replace_block(
+    "@Composable\nfun JalaliDateDialog",
+    "@Composable\nfun TransactionDialog",
 '''@Composable
 fun JalaliDateDialog(initial: String, onPicked: (String) -> Unit) {
     val context = LocalContext.current
@@ -79,21 +90,20 @@ fun JalaliDateDialog(initial: String, onPicked: (String) -> Unit) {
     ).show()
 }
 
-@Composable
-fun TransactionDialog''')
+''')
 
-sub(r'fun TransactionDialog\(accounts: List<JSONObject>, categories: List<JSONObject>,',
-    'fun TransactionDialog(initialType: String?, accounts: List<JSONObject>, categories: List<JSONObject>,')
-sub(r'var type by remember \{ mutableStateOf\("EXPENSE"\) \}',
-    'var type by remember { mutableStateOf(initialType ?: "EXPENSE") }', count=1)
-sub(r'title = \{ Text\(if \(type == "INCOME"\) "ثبت درآمد" else "ثبت هزینه"\) \}',
-    'title = { Text("تراکنش جدید") }', count=1)
-sub(r'''Row \{
-                FilterChip\(selected = type == "EXPENSE", onClick = \{ type = "EXPENSE"; category = 0 \}, label = \{ Text\("هزینه"\) \}\)
-                Spacer\(Modifier\.width\(8\.dp\)\)
-                FilterChip\(selected = type == "INCOME", onClick = \{ type = "INCOME"; category = 0 \}, label = \{ Text\("درآمد"\) \}\)
-            \}''',
-'''Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+replace_once("fun TransactionDialog(accounts: List<JSONObject>, categories: List<JSONObject>, onClose: () -> Unit, onSaved: () -> Unit) {",
+            "fun TransactionDialog(initialType: String?, accounts: List<JSONObject>, categories: List<JSONObject>, onClose: () -> Unit, onSaved: () -> Unit) {")
+replace_once('var type by remember { mutableStateOf("EXPENSE") }',
+            'var type by remember { mutableStateOf(initialType ?: "EXPENSE") }')
+replace_once('title = { Text(if (type == "INCOME") "ثبت درآمد" else "ثبت هزینه") }',
+            'title = { Text("تراکنش جدید") }')
+replace_once('''            Row {
+                FilterChip(selected = type == "EXPENSE", onClick = { type = "EXPENSE"; category = 0 }, label = { Text("هزینه") })
+                Spacer(Modifier.width(8.dp))
+                FilterChip(selected = type == "INCOME", onClick = { type = "INCOME"; category = 0 }, label = { Text("درآمد") })
+            }''',
+'''            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = type == "EXPENSE", onClick = { type = "EXPENSE"; category = 0 }, label = { Text("ثبت هزینه") })
                 FilterChip(selected = type == "INCOME", onClick = { type = "INCOME"; category = 0 }, label = { Text("ثبت درآمد") })
             }''')
