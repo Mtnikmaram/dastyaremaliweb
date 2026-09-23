@@ -4,30 +4,14 @@ import re
 p = Path("android/app/src/main/java/ir/dastyaremali/app/MainActivity.kt")
 s = p.read_text()
 
-def once(old, new):
+def sub(pattern, repl, count=1):
     global s
-    if old not in s:
-        raise SystemExit("Missing expected text: " + old[:100].replace("\n", " "))
-    s = s.replace(old, new, 1)
+    ns, n = re.subn(pattern, repl, s, count=count, flags=re.S)
+    if n != count:
+        raise SystemExit(f"Patch pattern not found: {pattern[:120]}")
+    s = ns
 
-once(
-'''fun AppShell(onLogout: () -> Unit) {
-    var page by remember { mutableStateOf(0) }
-    Scaffold(bottomBar = {
-        NavigationBar {
-            listOf("خانه", "تراکنش", "اقساط", "حساب").forEachIndexed { i, title ->
-                NavigationBarItem(selected = page == i, onClick = { page = i }, icon = {}, label = { Text(title) })
-            }
-        }
-    }) { p ->
-        when (page) {
-            1 -> Transactions(Modifier.padding(p))
-            2 -> Loans(Modifier.padding(p))
-            3 -> Accounts(Modifier.padding(p))
-            else -> Home(Modifier.padding(p), onLogout, { page = 1 })
-        }
-    }
-}''',
+sub(r'fun AppShell\(onLogout: \(\) -> Unit\) \{.*?\n\}\n\n@Composable\nfun Home',
 '''fun AppShell(onLogout: () -> Unit) {
     var page by remember { mutableStateOf(0) }
     var quickTransactionType by remember { mutableStateOf<String?>(null) }
@@ -58,36 +42,27 @@ once(
             }
         }
     }
-}''')
+}
 
-once('fun Home(modifier: Modifier, logout: () -> Unit, openTransactions: () -> Unit) {',
-     'fun Home(modifier: Modifier, logout: () -> Unit, openTransaction: (String) -> Unit) {')
+@Composable
+fun Home''')
 
-once('onClick = openTransactions,\n                    colors = ButtonDefaults.buttonColors(containerColor = p),',
-     'onClick = { openTransaction("INCOME") },\n                    colors = ButtonDefaults.buttonColors(containerColor = p),')
-once('onClick = openTransactions,\n                    colors = ButtonDefaults.outlinedButtonColors(contentColor = danger),',
-     'onClick = { openTransaction("EXPENSE") },\n                    colors = ButtonDefaults.outlinedButtonColors(contentColor = danger),')
+sub(r'fun Home\(modifier: Modifier, logout: \(\) -> Unit, openTransactions: \(\) -> Unit\) \{',
+    'fun Home(modifier: Modifier, logout: () -> Unit, openTransaction: (String) -> Unit) {')
+sub(r'onClick = openTransactions,\n(\s*colors = ButtonDefaults\.buttonColors',
+    r'onClick = { openTransaction("INCOME") },\n\1colors = ButtonDefaults.buttonColors', count=1)
+sub(r'onClick = openTransactions,\n(\s*colors = ButtonDefaults\.outlinedButtonColors',
+    r'onClick = { openTransaction("EXPENSE") },\n\1colors = ButtonDefaults.outlinedButtonColors', count=1)
 
-once('fun Transactions(modifier: Modifier) {',
-     'fun Transactions(modifier: Modifier, quickType: String? = null, onQuickTypeConsumed: () -> Unit = {}) {')
-once('    var error by remember { mutableStateOf("") }\n    fun load()',
-     '    var error by remember { mutableStateOf("") }\n    LaunchedEffect(quickType) { if (quickType != null) show = true }\n    fun load()',)
-once('if (show) TransactionDialog(accounts, categories, { show = false }, { load() })',
-     'if (show) TransactionDialog(quickType, accounts, categories, { show = false; onQuickTypeConsumed() }, { load() })')
+sub(r'fun Transactions\(modifier: Modifier\) \{',
+    'fun Transactions(modifier: Modifier, quickType: String? = null, onQuickTypeConsumed: () -> Unit = {}) {')
+sub(r'(var error by remember \{ mutableStateOf\("") \}\n)',
+    r'\1    LaunchedEffect(quickType) { if (quickType != null) show = true }\n', count=1)
+sub(r'if \(show\) TransactionDialog\(accounts, categories, \{ show = false \}, \{ load\(\) \}\)',
+    'if (show) TransactionDialog(quickType, accounts, categories, { show = false; onQuickTypeConsumed() }, { load() })')
 
-old_date='''@Composable
-fun JalaliDateDialog(initial:String, onPicked:(String)->Unit) {
-    var show by remember { mutableStateOf(true) }
-    var value by remember { mutableStateOf(initial) }
-    if(show) AlertDialog(onDismissRequest={show=false}, title={Text("انتخاب تاریخ شمسی")}, text={
-        Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
-            TextField(value,{ value=it.filter{ch->ch.isDigit()||ch=='/'} },label={Text("تاریخ شمسی")},singleLine=true,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),modifier=Modifier.fillMaxWidth())
-            Text("فرمت: سال/ماه/روز — مثال ۱۴۰۵/۰۷/۰۱")
-        }
-    },confirmButton={Button(onClick={if(value.matches(Regex("\\d{4}/\\d{1,2}/\\d{1,2}"))){onPicked(value);show=false}}){Text("تأیید")}},
-      dismissButton={TextButton(onClick={show=false}){Text("انصراف")}})
-}'''
-new_date='''@Composable
+sub(r'@Composable\nfun JalaliDateDialog\(.*?\n\}\n\n@Composable\nfun TransactionDialog',
+'''@Composable
 fun JalaliDateDialog(initial: String, onPicked: (String) -> Unit) {
     val context = LocalContext.current
     val parts = initial.replace("-", "/").split("/").mapNotNull { it.toIntOrNull() }
@@ -102,26 +77,25 @@ fun JalaliDateDialog(initial: String, onPicked: (String) -> Unit) {
         },
         g.first, g.second - 1, g.third
     ).show()
-}'''
-once(old_date, new_date)
+}
 
-once('fun TransactionDialog(accounts: List<JSONObject>, categories: List<JSONObject>, onClose: () -> Unit, onSaved: () -> Unit) {',
-     'fun TransactionDialog(initialType: String?, accounts: List<JSONObject>, categories: List<JSONObject>, onClose: () -> Unit, onSaved: () -> Unit) {')
-once('var type by remember { mutableStateOf("EXPENSE") }',
-     'var type by remember { mutableStateOf(initialType ?: "EXPENSE") }')
-once('AlertDialog(onDismissRequest = onClose, title = { Text(if (type == "INCOME") "ثبت درآمد" else "ثبت هزینه") }, text = {',
-     'AlertDialog(onDismissRequest = onClose, title = { Text("تراکنش جدید") }, text = {')
-once('''            Row {
-                FilterChip(selected = type == "EXPENSE", onClick = { type = "EXPENSE"; category = 0 }, label = { Text("هزینه") })
-                Spacer(Modifier.width(8.dp))
-                FilterChip(selected = type == "INCOME", onClick = { type = "INCOME"; category = 0 }, label = { Text("درآمد") })
-            }''',
-'''            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+@Composable
+fun TransactionDialog''')
+
+sub(r'fun TransactionDialog\(accounts: List<JSONObject>, categories: List<JSONObject>,',
+    'fun TransactionDialog(initialType: String?, accounts: List<JSONObject>, categories: List<JSONObject>,')
+sub(r'var type by remember \{ mutableStateOf\("EXPENSE"\) \}',
+    'var type by remember { mutableStateOf(initialType ?: "EXPENSE") }', count=1)
+sub(r'title = \{ Text\(if \(type == "INCOME"\) "ثبت درآمد" else "ثبت هزینه"\) \}',
+    'title = { Text("تراکنش جدید") }', count=1)
+sub(r'''Row \{
+                FilterChip\(selected = type == "EXPENSE", onClick = \{ type = "EXPENSE"; category = 0 \}, label = \{ Text\("هزینه"\) \}\)
+                Spacer\(Modifier\.width\(8\.dp\)\)
+                FilterChip\(selected = type == "INCOME", onClick = \{ type = "INCOME"; category = 0 \}, label = \{ Text\("درآمد"\) \}\)
+            \}''',
+'''Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = type == "EXPENSE", onClick = { type = "EXPENSE"; category = 0 }, label = { Text("ثبت هزینه") })
                 FilterChip(selected = type == "INCOME", onClick = { type = "INCOME"; category = 0 }, label = { Text("ثبت درآمد") })
             }''')
-
-# Make the loan date picker use the same native calendar too.
-# The existing JalaliDateDialog call is retained, so all current Jalali date fields now open the calendar.
 
 p.write_text(s)
