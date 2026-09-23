@@ -6,6 +6,7 @@ import android.content.Context
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
@@ -80,6 +81,8 @@ private suspend fun call(context: Context, path: String, method: String = "GET",
     }
     return text
 }
+
+private fun fa(s: String): String = s.map { if (it in '0'..'9') ('۰'.code + (it - '0')).toChar() else it }.joinToString("")
 
 private fun money(v: Any?): String {
     val raw = v?.toString()?.replace(",", "")?.trim() ?: "0"
@@ -249,7 +252,7 @@ fun Home(modifier: Modifier, logout: () -> Unit, openTransactions: () -> Unit) {
                     modifier = Modifier.weight(1f)
                 ) { Text("＋ ثبت درآمد") }
                 OutlinedButton(
-                    onClick = { context.startActivity(android.content.Intent(context, MainActivity::class.java)) },
+                    onClick = openTransactions,
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = danger),
                     border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE8B5B5)),
                     shape = MaterialTheme.shapes.medium,
@@ -270,10 +273,10 @@ fun Home(modifier: Modifier, logout: () -> Unit, openTransactions: () -> Unit) {
                 ) {
                     Column(Modifier.padding(20.dp)) {
                         Text("موجودی فعلی", color = Color(0xFFCCE6E2), style = MaterialTheme.typography.labelMedium)
-                        Text(money(data.opt("current_balance")) + " تومان", color = Color.White, style = MaterialTheme.typography.headlineMedium)
+                        Text(money(data.opt("current_balance")), color = Color.White, style = MaterialTheme.typography.headlineMedium)
                         Spacer(Modifier.height(18.dp))
                         Text("قابل خرج کردن امن", color = Color(0xFFCCE6E2), style = MaterialTheme.typography.labelMedium)
-                        Text(money(data.opt("safe_to_spend")) + " تومان", color = Color.White, style = MaterialTheme.typography.headlineSmall)
+                        Text(money(data.opt("safe_to_spend")), color = Color.White, style = MaterialTheme.typography.headlineSmall)
                         Spacer(Modifier.height(14.dp))
                         HorizontalDivider(color = Color.White.copy(alpha = .2f))
                         Spacer(Modifier.height(10.dp))
@@ -310,7 +313,7 @@ fun Home(modifier: Modifier, logout: () -> Unit, openTransactions: () -> Unit) {
                         }
                         Spacer(Modifier.height(12.dp))
                         HorizontalDivider(color = line)
-                        FinanceRow("کل بدهی", money(data.opt("total_debt")) + " تومان", text, muted)
+                        FinanceRow("کل بدهی", money(data.opt("total_debt")), text, muted)
                     }
                 }
             }
@@ -320,10 +323,10 @@ fun Home(modifier: Modifier, logout: () -> Unit, openTransactions: () -> Unit) {
                     InfoCard(
                         "تعهدات",
                         listOf(
-                            "معوق" to money(data.opt("overdue_commitments")) + " تومان",
-                            "این ماه" to money(data.opt("current_month_commitments")) + " تومان",
-                            "ماه بعد" to money(data.opt("next_month_commitments")) + " تومان",
-                            "آینده" to money(data.opt("future_commitments")) + " تومان"
+                            "معوق" to money(data.opt("overdue_commitments")),
+                            "این ماه" to money(data.opt("current_month_commitments")),
+                            "ماه بعد" to money(data.opt("next_month_commitments")),
+                            "آینده" to money(data.opt("future_commitments"))
                         ),
                         Modifier.weight(1f),
                         card, line, text, muted, danger
@@ -340,9 +343,9 @@ fun Home(modifier: Modifier, logout: () -> Unit, openTransactions: () -> Unit) {
                 ) {
                     Column(Modifier.padding(19.dp)) {
                         Text("پیش‌بینی", style = MaterialTheme.typography.titleMedium, color = text)
-                        FinanceRow("بودجه امن روزانه", money(data.opt("daily_safe_budget")) + " تومان", text, muted)
-                        FinanceRow("خرج برآوردی باقی‌مانده", money(data.opt("projected_remaining_spend")) + " تومان", text, muted)
-                        FinanceRow("موجودی پایان ماه", money(data.opt("projected_month_end_balance")) + " تومان", text, muted)
+                        FinanceRow("بودجه امن روزانه", money(data.opt("daily_safe_budget")), text, muted)
+                        FinanceRow("خرج برآوردی باقی‌مانده", money(data.opt("projected_remaining_spend")), text, muted)
+                        FinanceRow("موجودی پایان ماه", money(data.opt("projected_month_end_balance")), text, muted)
                     }
                 }
             }
