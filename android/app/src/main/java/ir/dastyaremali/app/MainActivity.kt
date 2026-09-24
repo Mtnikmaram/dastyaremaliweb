@@ -772,18 +772,138 @@ fun Loans(modifier: Modifier) {
 
 @Composable
 fun LoanDialog(onClose:()->Unit,onSaved:()->Unit){
-    val context=LocalContext.current; val scope=rememberCoroutineScope()
-    var showDate by remember{mutableStateOf(false)}; var title by remember{mutableStateOf("")}; var principal by remember{mutableStateOf("")}; var installment by remember{mutableStateOf("")}; var count by remember{mutableStateOf("")}; var start by remember{mutableStateOf(todayJalali())}; var historyMode by remember{mutableStateOf("ALL_PAID")}; var error by remember{mutableStateOf("")}
-    AlertDialog(onDismissRequest=onClose,title={Text("وام جدید")},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
-        TextField(title,{title=it},label={Text("عنوان")},modifier=Modifier.fillMaxWidth())
-        AmountField("مبلغ وام",principal){principal=it}; AmountField("مبلغ قسط",installment){installment=it}
-        OutlinedTextField(count,{count=it.filter(Char::isDigit)},label={Text("تعداد اقساط")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),modifier=Modifier.fillMaxWidth())
-        OutlinedButton(onClick={showDate=true},modifier=Modifier.fillMaxWidth()){Text("شروع: "+start)}
-        SimpleChoice("وضعیت اقساط گذشته", listOf("ALL_PAID" to "اقساط گذشته پرداخت شده", "OVERDUE_COUNT" to "تعدادی از اقساط گذشته باقی مانده"), historyMode) { historyMode = it }
-        if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
-    }},confirmButton={Button(onClick={scope.launch{try{
-        val body=JSONObject().put("title",title.trim()).put("loan_type","LOAN").put("principal_amount",parseMoney(principal)).put("installment_amount",parseMoney(installment)).put("total_installments",count.toIntOrNull()?:0).put("start_date",jalaliToApi(start)).put("is_active",true).put("history_mode",historyMode).put("overdue_count",if(historyMode=="OVERDUE_COUNT") (count.toIntOrNull() ?: 0) else 0)
-        if(title.isBlank()||principal.toLongOrNull()?:0<=0||installment.toLongOrNull()?:0<=0||count.toIntOrNull()?:0<1)error="اطلاعات وام را کامل کنید" else {call(context,"/api/loans/","POST",body.toString());onClose();onSaved()}
-    }catch(e:Exception){error=e.message?:"خطا"}}}){Text("ثبت")}},dismissButton={TextButton(onClick=onClose){Text("انصراف")}})
+    val context=LocalContext.current
+    val scope=rememberCoroutineScope()
+    var showDate by remember{mutableStateOf(false)}
+    var title by remember{mutableStateOf("")}
+    var principal by remember{mutableStateOf("")}
+    var interest by remember{mutableStateOf("")}
+    var installment by remember{mutableStateOf("")}
+    var count by remember{mutableStateOf("")}
+    var start by remember{mutableStateOf(todayJalali())}
+    var historyMode by remember{mutableStateOf("ALL_PAID")}
+    var overdueCount by remember{mutableStateOf("")}
+    var error by remember{mutableStateOf("")}
+
+    val p = parseMoney(principal)
+    val i = parseMoney(interest)
+    val inst = parseMoney(installment)
+    val n = count.toIntOrNull() ?: 0
+
+    // Exactly two of interest / installment / count determine the third.
+    val calculatedInterest = if (interest.isBlank() && inst > 0 && n > 0) (inst * n - p).coerceAtLeast(0) else null
+    val calculatedInstallment = if (installment.isBlank() && i >= 0 && n > 0 && p > 0) ((p + i + n - 1) / n) else null
+    val calculatedCount = if (count.isBlank() && i >= 0 && inst > 0 && p > 0) ((p + i + inst - 1) / inst).toInt() else null
+
+    AlertDialog(
+        onDismissRequest=onClose,
+        title={Text("وام جدید")},
+        text={
+            Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
+                TextField(title,{title=it},label={Text("عنوان")},modifier=Modifier.fillMaxWidth())
+                AmountField("اصل مبلغ وام",principal){principal=it}
+                AmountField("سود کل وام (اختیاری)",interest){interest=it}
+                AmountField("مبلغ هر قسط (اختیاری)",installment){installment=it}
+                OutlinedTextField(
+                    count,
+                    {count=it.filter(Char::isDigit)},
+                    label={Text("تعداد اقساط (اختیاری)")},
+                    keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),
+                    modifier=Modifier.fillMaxWidth()
+                )
+
+                if (calculatedInterest != null) {
+                    Text("سود محاسبه‌شده: " + money(calculatedInterest))
+                }
+                if (calculatedInstallment != null) {
+                    Text("قسط محاسبه‌شده: " + money(calculatedInstallment))
+                }
+                if (calculatedCount != null) {
+                    Text("تعداد اقساط محاسبه‌شده: " + fa(calculatedCount.toString()))
+                }
+
+                val finalInterest = if (interest.isBlank()) calculatedInterest ?: 0L else i
+                val finalInstallment = if (installment.isBlank()) calculatedInstallment ?: 0L else inst
+                val finalCount = if (count.isBlank()) calculatedCount ?: 0 else n
+                val totalRepayment = p + finalInterest
+                if (p > 0 && finalInterest >= 0) {
+                    Text("مجموع بازپرداخت: " + money(totalRepayment))
+                }
+                if (finalCount > 0 && finalInstallment > 0) {
+                    val last = totalRepayment - finalInstallment * (finalCount - 1)
+                    Text("قسط آخر: " + money(last))
+                }
+
+                OutlinedButton(onClick={showDate=true},modifier=Modifier.fillMaxWidth()){
+                    Text("شروع: "+start)
+                }
+
+                SimpleChoice(
+                    "وضعیت اقساط گذشته",
+                    listOf(
+                        "ALL_PAID" to "اقساط گذشته پرداخت شده",
+                        "OVERDUE_COUNT" to "تعدادی از اقساط گذشته باقی مانده"
+                    ),
+                    historyMode
+                ) { historyMode = it }
+
+                if(historyMode=="OVERDUE_COUNT"){
+                    OutlinedTextField(
+                        overdueCount,
+                        {overdueCount=it.filter(Char::isDigit)},
+                        label={Text("تعداد اقساط عقب‌افتاده")},
+                        keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),
+                        modifier=Modifier.fillMaxWidth()
+                    )
+                }
+
+                if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
+            }
+        },
+        confirmButton={
+            Button(onClick={
+                scope.launch{
+                    try{
+                        val finalInterest = if (interest.isBlank()) calculatedInterest ?: 0L else i
+                        val finalInstallment = if (installment.isBlank()) calculatedInstallment ?: 0L else inst
+                        val finalCount = if (count.isBlank()) calculatedCount ?: 0 else n
+                        val overdue = overdueCount.toIntOrNull() ?: 0
+
+                        if(title.trim().isBlank() || p<=0){
+                            error="عنوان و اصل مبلغ وام را وارد کنید"
+                        } else if(
+                            finalInterest < 0 || finalInstallment <= 0 || finalCount < 1 ||
+                            (interest.isBlank() && calculatedInterest == null) ||
+                            (installment.isBlank() && calculatedInstallment == null) ||
+                            (count.isBlank() && calculatedCount == null)
+                        ){
+                            error="حداقل دو مورد از سود، مبلغ قسط و تعداد اقساط را وارد کنید"
+                        } else if(historyMode=="OVERDUE_COUNT" && overdue > finalCount){
+                            error="تعداد اقساط عقب‌افتاده نمی‌تواند بیشتر از کل اقساط باشد"
+                        } else {
+                            val body=JSONObject()
+                                .put("title",title.trim())
+                                .put("loan_type","LOAN")
+                                .put("principal_amount",p)
+                                .put("interest_amount",finalInterest)
+                                .put("installment_amount",finalInstallment)
+                                .put("total_installments",finalCount)
+                                .put("start_date",jalaliToApi(start))
+                                .put("is_active",true)
+                                .put("history_mode",historyMode)
+                                .put("overdue_count",if(historyMode=="OVERDUE_COUNT") overdue else 0)
+
+                            call(context,"/api/loans/","POST",body.toString())
+                            onClose()
+                            onSaved()
+                        }
+                    }catch(e:Exception){
+                        error=e.message?:"خطا"
+                    }
+                }
+            }){Text("ثبت")}
+        },
+        dismissButton={TextButton(onClick=onClose){Text("انصراف")}}
+    )
     if (showDate) JalaliDateDialog(start) { start = it; showDate = false }
 }
