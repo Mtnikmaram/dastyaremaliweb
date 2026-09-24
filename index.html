@@ -83,6 +83,6 @@ function renderJalaliPicker(){if(!jpState)return;document.getElementById('jalali
 function pickJalaliDay(d){const el=document.getElementById(jpState.id);if(el){el.value=fa(jpState.y+'/'+String(jpState.m).padStart(2,'0')+'/'+String(d).padStart(2,'0'));el.dispatchEvent(new Event('change',{bubbles:true}))}document.getElementById('jalaliPicker')?.remove();jpState=null}
 document.addEventListener('click',e=>{const el=e.target.closest?.('input');if(el&&['fdate','tdate','lstart','pdate'].includes(el.id)){e.preventDefault();openJalaliPicker(el.id)}});
 async function route(){const p=location.hash.slice(1)||'home';if(!token()&&p!=='auth')return auth();if(p==='auth')return auth();if(p==='tx')return txPage();if(p==='loans')return loansPage();if(p==='accounts')return accountsPage();if(p==='categories')return categoriesPage();if(p==='assistant')return assistantPage();return home()}
-addEventListener('hashchange',route);if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});route();
+addEventListener('hashchange',route);if('serviceWorker' in navigator){navigator.serviceWorker.register('./sw.js?v=4',{updateViaCache:'none'}).catch(()=>{})}route();
 </script>
 </body></html>
