@@ -1,0 +1,59 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Prepare web assets
+        run: |
+          rm -rf www
+          mkdir -p www
+          cp index.html www/
+          cp manifest.json www/ 2>/dev/null || true
+          cp sw.js www/ 2>/dev/null || true
+          cp -r icons www/ 2>/dev/null || true
+          cp -r assets www/ 2>/dev/null || true
+
+      - name: Install Capacitor
+        run: npm install
+
+      - name: Create Android project
+        run: npx cap add android
+
+      - name: Sync Android
+        run: npx cap sync android
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Build debug APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: dastyar-e-mali-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
