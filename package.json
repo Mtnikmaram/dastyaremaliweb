@@ -1,0 +1,15 @@
+{
+  "name": "dastyar-e-mali-android",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "android:build": "npx cap sync android && cd android && ./gradlew assembleDebug"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.4.4",
+    "@capacitor/core": "^7.4.4"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.4.4"
+  }
+}
