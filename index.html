@@ -108,7 +108,7 @@ const isCurrent=!!(currentPlan&&String(currentPlan.id)===String(p.id));
 const canBuy=Number(p.price)>0&&!isCurrent;
 html+='<div class="card" style="display:flex;flex-direction:column;gap:12px;border:2px solid '+(isCurrent?'var(--p)':'var(--line)')+'">';
 html+='<div><h2>'+esc(p.name)+'</h2><div class="muted">'+esc(p.description||'')+'</div></div>';
-html+='<div style="font-size:24px;font-weight:900">'+(Number(p.price)>0?money(p.price)+' ریال':'رایگان')+'</div>';
+html+='<div style="font-size:24px;font-weight:900">'+(Number(p.price)>0?money(num(p.price)*10)+' ریال':'رایگان')+'</div>';
 html+='<div class="mini">'+fa(p.duration_days)+' روز اعتبار</div>';
 html+='<div class="row"><span>حساب</span><b>'+fa(p.max_accounts)+'</b></div>';
 html+='<div class="row"><span>تراکنش ماهانه</span><b>'+fa(p.max_transactions_per_month)+'</b></div>';
