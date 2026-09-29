@@ -109,7 +109,8 @@ const plans=list(result[0]?.plans||result[0]);
 const sub=result[1];
 const current=sub?.active?sub.subscription:null;
 const currentPlan=current?.plan||null;
-let html='<section class="grid three">';
+const remainingText=()=>{if(!current?.expires_at)return 'بدون تاریخ انقضا';const ms=new Date(current.expires_at).getTime()-Date.now();if(ms<=0)return 'منقضی شده';const totalHours=Math.floor(ms/3600000),days=Math.floor(totalHours/24),hours=totalHours%24;return days>0?(fa(days)+' روز و '+fa(hours)+' ساعت'):(fa(hours)+' ساعت')};
+let html='<section class="card" style="margin-bottom:16px;border:2px solid var(--p);background:linear-gradient(135deg,#f0fdfa,#fff)"><div class="top"><div><div class="mini">اشتراک فعال شما</div><h2 style="margin:4px 0">'+esc(currentPlan?.name||'پلن رایگان')+'</h2><div class="muted">'+(current?'مدل اشتراک و زمان باقی‌مانده تا پایان اعتبار':'در حال استفاده از امکانات پایه دستیار مالی')+'</div></div><div style="text-align:left"><div class="mini">زمان باقی‌مانده</div><b style="font-size:20px">'+remainingText()+'</b></div></div>'+(current?'<div class="row" style="margin-top:10px"><span>تاریخ پایان اشتراک</span><b>'+esc(current.expires_at?gregToJalali(String(current.expires_at).slice(0,10)):'—')+'</b></div>':'')+'</section><section class="grid three">';
 plans.forEach(p=>{
 const isCurrent=!!(currentPlan&&String(currentPlan.id)===String(p.id));
 const canBuy=Number(p.price)>0&&!isCurrent;
@@ -131,7 +132,7 @@ if(current){
 html+='<section class="card" style="margin-top:16px"><h2>اشتراک فعلی</h2>';
 html+='<div class="row"><span>پلن</span><b>'+esc(currentPlan?.name||'')+'</b></div>';
 html+='<div class="row"><span>وضعیت</span><b>'+esc(current.status||'')+'</b></div>';
-html+='<div class="row"><span>انقضا</span><b>'+esc(current.expires_at?gregToJalali(String(current.expires_at).slice(0,10)):'—')+'</b></div>';
+html+='<div class="row"><span>زمان باقی‌مانده</span><b>'+remainingText()+'</b></div>';
 html+='</section>';
 }
 plansout.innerHTML=html;
