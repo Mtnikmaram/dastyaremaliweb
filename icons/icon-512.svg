@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<rect width="512" height="512" rx="112" fill="#0f766e"/>
+<circle cx="256" cy="256" r="156" fill="#fff" opacity=".14"/>
+<path d="M256 128c-70 0-126 56-126 126s56 126 126 126 126-56 126-126-56-126-126-126zm0 40c42 0 76 18 76 40s-34 40-76 40-76-18-76-40 34-40 76-40zm0 132c-42 0-76-18-76-40s34-40 76-40 76 18 76 40-34 40-76 40z" fill="#fff"/>
+<text x="256" y="315" text-anchor="middle" font-family="Arial,sans-serif" font-size="128" font-weight="700" fill="#0f766e">₮</text>
+</svg>

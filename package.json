@@ -1,6 +1,6 @@
 {
   "name": "dastyar-e-mali-android",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "private": true,
   "scripts": {
     "android:build": "npx cap sync android && cd android && ./gradlew assembleDebug"
