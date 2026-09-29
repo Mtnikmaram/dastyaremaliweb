@@ -83,7 +83,7 @@ function drawLoans(){
     const repayment=num(l.principal_amount)+num(l.interest_amount);
     const pendingIns=ins.filter(i=>i.status!=='PAID').sort((a,b)=>String(a.due_date).localeCompare(String(b.due_date)));const remaining=Math.max(repayment-paid,0);const next=pendingIns[0];const nextDue=next?fa(gregToJalali(next.due_date)):'—';
     
-    return `<div class="loan-item"><div class="top" style="margin:0"><div class="loan-title"><div class="loan-icon">₮</div><div><b>${esc(l.title)}</b><div class="loan-meta"><span>${next?'سررسید بعدی: '+nextDue:'تکمیل شده'}</span></div></div></div><div style="text-align:left;min-width:155px"><div class="loan-amount">${money(remaining)} ریال مانده</div><div class="loan-next">سررسید بعدی: ${next?nextDue:'تکمیل شده'}</div><div class="loan-actions"><button class="btn" onclick="loanDetails(${l.id})">اقساط</button><button class="btn" onclick="openLoan(${l.id})">ویرایش</button></div></div></div></div>`;
+    return `<div class="loan-item"><div class="top" style="margin:0"><div class="loan-title"><div class="loan-icon">₮</div><div><b>${esc(l.title)}</b><div class="loan-meta"></div></div></div><div style="text-align:left;min-width:155px"><div class="loan-amount">${money(remaining)} ریال مانده</div><div class="loan-next">سررسید بعدی: ${next?nextDue:'تکمیل شده'}</div><div class="loan-actions"><button class="btn" onclick="loanDetails(${l.id})">اقساط</button><button class="btn" onclick="openLoan(${l.id})">ویرایش</button></div></div></div></div>`;
   }).join(''):'<div class="empty">هنوز وامی ثبت نشده است.</div>';
   const recurringCards=S.recurring.length?S.recurring.map(x=>{
     const occ=S.recOcc.filter(o=>o.recurring_expense===x.id).sort((a,b)=>String(a.due_date).localeCompare(String(b.due_date)));
