@@ -29,7 +29,7 @@ import java.text.NumberFormat
 import java.util.Calendar
 import java.util.Locale
 
-private const val API = "https://n8n.etedak.ir/dastyar-api"
+private const val API = "https://dastyarfinance.ir"
 private const val PREF = "dastyar_auth"
 
 class MainActivity : ComponentActivity() {
