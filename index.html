@@ -120,7 +120,9 @@ async function plansPage(){
 document.body.innerHTML=shell('plans',`<div class="top"><div><h1>اشتراک و پلن‌ها</h1><p>پلن مناسب استفاده از دستیار مالی را انتخاب کنید.</p></div></div><div id="plansout" class="loading">در حال دریافت پلن‌ها...</div>`);
 try{
 const result=await Promise.all([api('/api/subscription/plans/'),api('/api/subscription/me/')]);
-const allPlans=list(result[0]?.plans||result[0]);const wanted=[30,90,180,365];const plans=allPlans.filter(p=>wanted.includes(Number(p.duration_days))).sort((a,b)=>Number(a.duration_days)-Number(b.duration_days));
+const allPlans=list(result[0]?.plans||result[0]);
+const wantedCodes=['free','basic','pro'];
+const plans=allPlans.filter(p=>wantedCodes.includes(String(p.code||'').toLowerCase())).sort((a,b)=>['free','basic','pro'].indexOf(String(a.code||'').toLowerCase())-['free','basic','pro'].indexOf(String(b.code||'').toLowerCase()));
 const sub=result[1];
 const current=sub?.active?sub.subscription:null;
 const freePlan=plans.find(p=>String(p.code||'').toLowerCase()==='free')||plans.find(p=>Number(p.price)<=0)||null;
@@ -134,7 +136,7 @@ const canBuy=Number(p.price)>0&&!isCurrent;
 html+='<div class="card" style="display:flex;flex-direction:column;gap:12px;border:2px solid '+(isCurrent?'var(--p)':'var(--line)')+'">';
 html+='<div><h2>'+esc(p.name)+'</h2><div class="muted">'+esc(p.description||'')+'</div></div>';
 html+='<div style="font-size:24px;font-weight:900">'+(Number(p.price)>0?money(num(p.price)*10)+' ریال':'رایگان')+'</div>';
-const months={30:'۱ ماهه',90:'۳ ماهه',180:'۶ ماهه',365:'۱۲ ماهه'};html+='<div class="mini">'+(months[Number(p.duration_days)]||fa(p.duration_days)+' روز اعتبار')+'</div>';
+const planLabels={free:'رایگان',basic:'پایه',pro:'حرفه‌ای'};html+='<div class="mini">'+(planLabels[String(p.code||'').toLowerCase()]||fa(p.duration_days)+' روز اعتبار')+'</div>';
 html+='<div class="row"><span>حساب</span><b>'+fa(p.max_accounts)+'</b></div>';
 html+='<div class="row"><span>تراکنش ماهانه</span><b>'+fa(p.max_transactions_per_month)+'</b></div>';
 html+='<div class="row"><span>وام و اقساط</span><b>'+(p.advanced_loans_enabled?'کامل':'پایه')+'</b></div>';
