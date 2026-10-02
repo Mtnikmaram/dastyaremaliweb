@@ -155,10 +155,37 @@ private fun JSONArray.toObjects(): List<JSONObject> = List(length()) { getJSONOb
 fun DastyarApp() {
     val context = LocalContext.current
     var logged by remember { mutableStateOf(context.token() != null) }
+    var appError by remember { mutableStateOf<String?>(null) }
+
     CompositionLocalProvider(androidx.compose.ui.platform.LocalLayoutDirection provides LayoutDirection.Rtl) {
         MaterialTheme(colorScheme = lightColorScheme(primary = Color(0xFF0F766E))) {
-            if (logged) AppShell { context.logout(); logged = false }
-            else LoginScreen { logged = true }
+            if (appError != null) {
+                Column(
+                    Modifier.fillMaxSize().padding(24.dp),
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text("خطا در باز کردن داشبورد", style = MaterialTheme.typography.headlineSmall)
+                    Spacer(Modifier.height(12.dp))
+                    Text(appError ?: "خطای ناشناخته")
+                    Spacer(Modifier.height(20.dp))
+                    Button(onClick = {
+                        appError = null
+                        context.logout()
+                        logged = false
+                    }) { Text("بازگشت به ورود") }
+                }
+            } else if (logged) {
+                try {
+                    AppShell {
+                        context.logout()
+                        logged = false
+                    }
+                } catch (e: Exception) {
+                    appError = e.message ?: e.javaClass.simpleName
+                }
+            } else {
+                LoginScreen { logged = true }
+            }
         }
     }
 }
