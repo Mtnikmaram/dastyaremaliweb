@@ -2,7 +2,9 @@ package ir.dastyaremali.app
 
 import android.app.DatePickerDialog
 import android.os.Bundle
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
@@ -35,6 +37,10 @@ private const val PREF = "dastyar_auth"
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (android.os.Build.VERSION.SDK_INT >= 23 &&
+            checkSelfPermission(Manifest.permission.RECEIVE_SMS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.RECEIVE_SMS), 1001)
+        }
         setContent { DastyarApp() }
     }
 }
@@ -87,7 +93,7 @@ private fun fa(s: String): String = s.map { if (it in '0'..'9') ('۰'.code + (it
 private fun money(v: Any?): String {
     val raw = v?.toString()?.replace(",", "")?.trim() ?: "0"
     val n = raw.toDoubleOrNull()?.toLong() ?: 0L
-    return NumberFormat.getNumberInstance(Locale("fa", "IR")).format(n) + " تومان"
+    return NumberFormat.getNumberInstance(Locale("fa", "IR")).format(n) + " ریال"
 }
 private fun digitsOnly(s: String) = s.filter(Char::isDigit)
 private fun formatInputMoney(s: String): String {
@@ -131,6 +137,17 @@ private fun jalaliToApi(s:String): String {
     val g=jalaliToGregorian(p[0],p[1],p[2]); return "%04d-%02d-%02d".format(g.first,g.second,g.third)
 }
 private fun todayApi(): String { val c=Calendar.getInstance(); return "%04d-%02d-%02d".format(c.get(Calendar.YEAR),c.get(Calendar.MONTH)+1,c.get(Calendar.DAY_OF_MONTH)) }
+private fun timestampToJalali(timestamp: Long): String {
+    val c = Calendar.getInstance().apply { timeInMillis = timestamp }
+    val j = gregorianToJalali(c.get(Calendar.YEAR), c.get(Calendar.MONTH) + 1, c.get(Calendar.DAY_OF_MONTH))
+    return "%04d/%02d/%02d".format(j.first, j.second, j.third)
+}
+private fun pendingSms(context: Context): JSONObject? = try {
+    context.getSharedPreferences("dastyar_sms", 0).getString("pending", null)?.let { JSONObject(it) }
+} catch (_: Exception) { null }
+private fun clearPendingSms(context: Context) {
+    context.getSharedPreferences("dastyar_sms", 0).edit().remove("pending").apply()
+}
 private fun apiToJalali(s:String): String { val p=s.split("-").mapNotNull{it.toIntOrNull()}; if(p.size!=3)return s; val j=gregorianToJalali(p[0],p[1],p[2]); return "%04d/%02d/%02d".format(j.first,j.second,j.third) }
 private fun JSONArray.toObjects(): List<JSONObject> = List(length()) { getJSONObject(it) }
 
@@ -222,6 +239,8 @@ fun Home(modifier: Modifier, logout: () -> Unit, openTransaction: (String) -> Un
     val context = LocalContext.current
     var d by remember { mutableStateOf<JSONObject?>(null) }
     var error by remember { mutableStateOf("") }
+    var sms by remember { mutableStateOf<JSONObject?>(pendingSms(context)) }
+    var showSms by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         try { d = JSONObject(call(context, "/api/dashboard/")) }
         catch (e: Exception) { error = e.message ?: "خطا" }
@@ -237,6 +256,13 @@ fun Home(modifier: Modifier, logout: () -> Unit, openTransaction: (String) -> Un
     val good = Color(0xFF15803D)
     val danger = Color(0xFFDC2626)
     val warn = Color(0xFFB45309)
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(1500)
+            sms = pendingSms(context)
+        }
+    }
 
     LazyColumn(
         modifier = modifier.fillMaxSize().background(bg),
@@ -254,6 +280,30 @@ fun Home(modifier: Modifier, logout: () -> Unit, openTransaction: (String) -> Un
                     Text("همه اعداد از موتور مالی Django می‌آیند.", style = MaterialTheme.typography.bodySmall, color = muted)
                 }
                 TextButton(onClick = logout) { Text("خروج", color = muted) }
+            }
+        }
+
+        sms?.let { parsed ->
+            item {
+                Card(
+                    Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.large,
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF0FDFA)),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFB7E4DC))
+                ) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("تراکنش جدید از پیامک", style = MaterialTheme.typography.titleMedium, color = text)
+                        Text(if (parsed.optString("type") == "INCOME") "واریز" else "برداشت", color = muted)
+                        Text(money(parsed.optLong("amount")), style = MaterialTheme.typography.titleLarge, color = text)
+                        parsed.optString("bank").takeIf { it.isNotBlank() }?.let { Text("بانک: $it", color = muted) }
+                        Text("تاریخ پیامک: " + timestampToJalali(parsed.optLong("receivedAt")), color = muted, style = MaterialTheme.typography.bodySmall)
+                        Spacer(Modifier.height(10.dp))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { showSms = true }, modifier = Modifier.weight(1f)) { Text("بررسی و ثبت") }
+                            OutlinedButton(onClick = { clearPendingSms(context); sms = null }, modifier = Modifier.weight(1f)) { Text("نادیده گرفتن") }
+                        }
+                    }
+                }
             }
         }
 
@@ -369,6 +419,87 @@ fun Home(modifier: Modifier, logout: () -> Unit, openTransaction: (String) -> Un
             }
         }
     }
+    if (showSms && sms != null) {
+        SmsTransactionDialog(
+            parsed = sms!!,
+            onClose = { showSms = false },
+            onSaved = { showSms = false; sms = pendingSms(context) }
+        )
+    }
+}
+
+@Composable
+fun SmsTransactionDialog(parsed: JSONObject, onClose: () -> Unit, onSaved: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var type by remember { mutableStateOf(parsed.optString("type").ifBlank { "EXPENSE" }) }
+    var amount by remember { mutableStateOf(parsed.optLong("amount").toString()) }
+    var account by remember { mutableStateOf(0) }
+    var category by remember { mutableStateOf(0) }
+    var accounts by remember { mutableStateOf(listOf<JSONObject>()) }
+    var categories by remember { mutableStateOf(listOf<JSONObject>()) }
+    var date by remember { mutableStateOf(timestampToJalali(parsed.optLong("receivedAt"))) }
+    var description by remember { mutableStateOf("ثبت از پیامک بانکی") }
+    var error by remember { mutableStateOf("") }
+    var showDate by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        try {
+            accounts = JSONArray(call(context, "/api/accounts/")).toObjects()
+            categories = JSONArray(call(context, "/api/categories/")).toObjects()
+            account = accounts.firstOrNull()?.optInt("id", 0) ?: 0
+        } catch (e: Exception) {
+            error = e.message ?: "خطا در دریافت حساب‌ها و دسته‌بندی‌ها"
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("تأیید تراکنش پیامکی") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("اطلاعات از پیامک بانکی استخراج شده؛ قبل از ثبت بررسی کنید.")
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = type == "EXPENSE", onClick = { type = "EXPENSE"; category = 0 }, label = { Text("هزینه") })
+                    FilterChip(selected = type == "INCOME", onClick = { type = "INCOME"; category = 0 }, label = { Text("درآمد") })
+                }
+                AmountField("مبلغ", amount) { amount = it }
+                SimpleSelector("حساب", accounts, account) { account = it }
+                SimpleSelector("دسته‌بندی", categories.filter { it.optString("category_type") == type }, category) { category = it }
+                TextField(description, { description = it }, label = { Text("توضیح") }, modifier = Modifier.fillMaxWidth())
+                OutlinedButton(onClick = { showDate = true }, modifier = Modifier.fillMaxWidth()) { Text("تاریخ: $date") }
+                if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                scope.launch {
+                    try {
+                        val n = parseMoney(amount)
+                        if (n <= 0 || account == 0 || category == 0) {
+                            error = "مبلغ، حساب و دسته‌بندی را کامل کنید"
+                        } else {
+                            val body = JSONObject()
+                                .put("account", account)
+                                .put("category", category)
+                                .put("transaction_type", type)
+                                .put("amount", n)
+                                .put("date", jalaliToApi(date))
+                                .put("description", description.trim())
+                            call(context, "/api/transactions/", "POST", body.toString())
+                            clearPendingSms(context)
+                            onClose()
+                            onSaved()
+                        }
+                    } catch (e: Exception) {
+                        error = e.message ?: "خطا در ثبت تراکنش"
+                    }
+                }
+            }) { Text("تأیید و ثبت") }
+        },
+        dismissButton = { TextButton(onClick = onClose) { Text("انصراف") } }
+    )
+    if (showDate) JalaliDateDialog(date) { date = it; showDate = false }
 }
 
 @Composable
@@ -537,7 +668,7 @@ fun SimpleSelector(label: String, items: List<JSONObject>, selected: Int, onSele
 @Composable
 fun AmountField(label: String, value: String, change: (String) -> Unit) {
     OutlinedTextField(formatInputMoney(value), { change(digitsOnly(it)) }, label = { Text(label) },
-        suffix = { Text("تومان") }, singleLine = true,
+        suffix = { Text("ریال") }, singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         modifier = Modifier.fillMaxWidth())
 }
