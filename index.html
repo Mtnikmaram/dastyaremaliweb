@@ -128,7 +128,7 @@ const current=sub?.active?sub.subscription:null;
 const currentPlan=current?.plan||null;
 const labels={30:'۱ ماهه',90:'۳ ماهه',180:'۶ ماهه',365:'۱۲ ماهه'};
 const monthlyBase=plans.find(p=>Number(p.duration_days)===30);
-const moneyToman=v=>money(Number(v||0));
+const moneyRial=v=>money(Number(v||0));
 const remainingText=()=>{if(!current?.expires_at)return '—';const ms=new Date(current.expires_at).getTime()-Date.now();if(ms<=0)return 'منقضی شده';const days=Math.floor(ms/86400000),hours=Math.floor((ms%86400000)/3600000);return days>0?(fa(days)+' روز و '+fa(hours)+' ساعت'):(fa(hours)+' ساعت')};
 let html='';
 if(current){
@@ -140,7 +140,7 @@ const d=Number(p.duration_days), isCurrent=!!(currentPlan&&Number(currentPlan.id
 const canBuy=!isCurrent;
 html+='<div class="card" style="display:flex;flex-direction:column;gap:12px;border:2px solid '+(isCurrent?'var(--p)':'var(--line)')+'">';
 html+='<div><h2>'+labels[d]+'</h2><div class="muted">'+esc(p.description||'دسترسی به امکانات دستیار مالی')+'</div></div>';
-html+='<div style="font-size:25px;font-weight:900">'+moneyToman(p.price)+' <span class="unit">تومان</span></div>';
+html+='<div style="font-size:25px;font-weight:900">'+moneyRial(p.price)+' <span class="unit">ریال</span></div>';
 html+='<div class="mini">معادل ماهانه: '+moneyToman(Number(p.price)/Math.max(1,d/30))+' تومان</div>';
 html+='<div class="row"><span>حساب</span><b>'+fa(p.max_accounts)+'</b></div><div class="row"><span>تراکنش ماهانه</span><b>'+fa(p.max_transactions_per_month)+'</b></div><div class="row"><span>هوش مصنوعی</span><b>'+(p.ai_enabled?'فعال':'غیرفعال')+'</b></div>';
 if(isCurrent) html+='<div class="pill">پلن فعلی</div>';
