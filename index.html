@@ -117,52 +117,46 @@ async function accountsPage(){document.body.innerHTML=shell('accounts',`<div cla
 async function deleteAccount(id){const a=S.accs.find(x=>x.id===id);if(!a)return;if(!confirm('حساب «'+a.name+'» حذف شود؟'))return;try{await api('/api/accounts/'+id+'/',{method:'DELETE'});await ensureData();await accountsPage()}catch(e){alert(e.message)}}
 function openAccount(id){const a=id?S.accs.find(x=>x.id===id):null;document.body.insertAdjacentHTML('beforeend',`<div class="modalbg" id="modal"><section class="modal"><div class="top"><h2>${a?'ویرایش حساب':'حساب جدید'}</h2><button class="btn" onclick="closeModal()">×</button></div><form id="accform"><div class="field"><label>نام</label><input id="aname" required value="${esc(a?.name||'')}"></div><div class="field"><label>نوع</label><select id="atype"><option value="BANK">بانک</option><option value="CASH">نقدی</option><option value="WALLET">کیف پول</option><option value="OTHER">سایر</option></select></div><div class="field"><label><input id="aactive" type="checkbox" ${a?.is_active!==false?'checked':''}> فعال</label></div><div id="accerr"></div><button class="btn primary" style="width:100%">ذخیره</button></form></section></div>`);atype.value=a?.account_type||'BANK';accform.onsubmit=async e=>{e.preventDefault();try{const body={name:aname.value.trim(),account_type:atype.value,is_active:aactive.checked};await api(a?'/api/accounts/'+a.id+'/':'/api/accounts/',{method:a?'PATCH':'POST',body:JSON.stringify(body)});closeModal();if(!a){alert('حساب با موفقیت ایجاد شد.\n\nاگر در حال حاضر موجودی دارید، یک تراکنش «درآمد» به مبلغ موجودی فعلی ثبت کنید تا موجودی حساب شما در دستیار مالی با موجودی واقعی‌تان هماهنگ شود.');}await ensureData();await accountsPage()}catch(x){accerr.innerHTML='<div class="error">'+esc(x.message)+'</div>'}}}
 async function plansPage(){
-document.body.innerHTML=shell('plans',`<div class="top"><div><h1>اشتراک و پلن‌ها</h1><p>پلن مناسب استفاده از دستیار مالی را انتخاب کنید.</p></div></div><div id="plansout" class="loading">در حال دریافت پلن‌ها...</div>`);
+document.body.innerHTML=shell('plans',`<div class="top"><div><h1>اشتراک دستیار مالی</h1><p>مدت اشتراک را انتخاب کنید؛ مبلغ بر اساس مدت انتخابی محاسبه می‌شود.</p></div></div><div id="plansout" class="loading">در حال دریافت پلن‌ها...</div>`);
 try{
 const result=await Promise.all([api('/api/subscription/plans/'),api('/api/subscription/me/')]);
 const allPlans=list(result[0]?.plans||result[0]);
-const wantedCodes=['free','basic','pro'];
-const plans=allPlans.filter(p=>wantedCodes.includes(String(p.code||'').toLowerCase())).sort((a,b)=>['free','basic','pro'].indexOf(String(a.code||'').toLowerCase())-['free','basic','pro'].indexOf(String(b.code||'').toLowerCase()));
+const durations=[30,90,180,365];
+const plans=allPlans.filter(p=>Number(p.duration_days)>0&&durations.includes(Number(p.duration_days))).sort((a,b)=>Number(a.duration_days)-Number(b.duration_days));
 const sub=result[1];
 const current=sub?.active?sub.subscription:null;
-const freePlan=plans.find(p=>String(p.code||'').toLowerCase()==='free')||plans.find(p=>Number(p.price)<=0)||null;
-const currentPlan=current?.plan||freePlan||null;
-const isFreePlan=!current&&!!freePlan;
-const remainingText=()=>{if(!current?.expires_at)return 'بدون تاریخ انقضا';const ms=new Date(current.expires_at).getTime()-Date.now();if(ms<=0)return 'منقضی شده';const totalHours=Math.floor(ms/3600000),days=Math.floor(totalHours/24),hours=totalHours%24;return days>0?(fa(days)+' روز و '+fa(hours)+' ساعت'):(fa(hours)+' ساعت')};
-let html='<section class="card" style="margin-bottom:16px;border:2px solid var(--p);background:linear-gradient(135deg,#f0fdfa,#fff)"><div class="top"><div><div class="mini">اشتراک فعال شما</div><h2 style="margin:4px 0">'+esc(currentPlan?.name||'پلن رایگان')+'</h2><div class="muted">'+(current?'مدل اشتراک و زمان باقی‌مانده تا پایان اعتبار':'در حال استفاده از امکانات پایه دستیار مالی')+'</div></div><div style="text-align:left"><div class="mini">زمان باقی‌مانده</div><b style="font-size:20px">'+remainingText()+'</b></div></div>'+(current?'<div class="row" style="margin-top:10px"><span>تاریخ پایان اشتراک</span><b>'+esc(current.expires_at?gregToJalali(String(current.expires_at).slice(0,10)):'—')+'</b></div>':'')+'</section><section class="grid three">';
+const currentPlan=current?.plan||null;
+const labels={30:'۱ ماهه',90:'۳ ماهه',180:'۶ ماهه',365:'۱۲ ماهه'};
+const monthlyBase=plans.find(p=>Number(p.duration_days)===30);
+const moneyToman=v=>money(Number(v||0)*10);
+const remainingText=()=>{if(!current?.expires_at)return '—';const ms=new Date(current.expires_at).getTime()-Date.now();if(ms<=0)return 'منقضی شده';const days=Math.floor(ms/86400000),hours=Math.floor((ms%86400000)/3600000);return days>0?(fa(days)+' روز و '+fa(hours)+' ساعت'):(fa(hours)+' ساعت')};
+let html='';
+if(current){
+html+='<section class="card" style="margin-bottom:16px;border:2px solid var(--p);background:linear-gradient(135deg,#f0fdfa,#fff)"><div class="top"><div><div class="mini">اشتراک فعال شما</div><h2 style="margin:4px 0">'+esc(currentPlan?.name||'اشتراک فعال')+'</h2><div class="muted">تا پایان اعتبار</div></div><div style="text-align:left"><div class="mini">زمان باقی‌مانده</div><b style="font-size:20px">'+remainingText()+'</b></div></div><div class="row"><span>تاریخ پایان</span><b>'+esc(current.expires_at?gregToJalali(String(current.expires_at).slice(0,10)):'—')+'</b></div></section>';
+}
+html+='<section class="grid two">';
 plans.forEach(p=>{
-const isCurrent=!!(currentPlan&&String(currentPlan.id)===String(p.id));
-const canBuy=Number(p.price)>0&&!isCurrent;
+const d=Number(p.duration_days), isCurrent=!!(currentPlan&&Number(currentPlan.id)===Number(p.id));
+const canBuy=!isCurrent;
 html+='<div class="card" style="display:flex;flex-direction:column;gap:12px;border:2px solid '+(isCurrent?'var(--p)':'var(--line)')+'">';
-html+='<div><h2>'+esc(p.name)+'</h2><div class="muted">'+esc(p.description||'')+'</div></div>';
-html+='<div style="font-size:24px;font-weight:900">'+(Number(p.price)>0?money(num(p.price)*10)+' ریال':'رایگان')+'</div>';
-const planLabels={free:'رایگان',basic:'پایه',pro:'حرفه‌ای'};html+='<div class="mini">'+(planLabels[String(p.code||'').toLowerCase()]||fa(p.duration_days)+' روز اعتبار')+'</div>';
-html+='<div class="row"><span>حساب</span><b>'+fa(p.max_accounts)+'</b></div>';
-html+='<div class="row"><span>تراکنش ماهانه</span><b>'+fa(p.max_transactions_per_month)+'</b></div>';
-html+='<div class="row"><span>وام و اقساط</span><b>'+(p.advanced_loans_enabled?'کامل':'پایه')+'</b></div>';
-html+='<div class="row"><span>هوش مصنوعی</span><b>'+(p.ai_enabled?'فعال · '+fa(p.ai_requests_per_month)+' درخواست':'غیرفعال')+'</b></div>';
+html+='<div><h2>'+labels[d]+'</h2><div class="muted">'+esc(p.description||'دسترسی به امکانات دستیار مالی')+'</div></div>';
+html+='<div style="font-size:25px;font-weight:900">'+moneyToman(p.price)+' <span class="unit">تومان</span></div>';
+html+='<div class="mini">معادل ماهانه: '+moneyToman(Number(p.price)/Math.max(1,d/30))+' تومان</div>';
+html+='<div class="row"><span>حساب</span><b>'+fa(p.max_accounts)+'</b></div><div class="row"><span>تراکنش ماهانه</span><b>'+fa(p.max_transactions_per_month)+'</b></div><div class="row"><span>هوش مصنوعی</span><b>'+(p.ai_enabled?'فعال':'غیرفعال')+'</b></div>';
 if(isCurrent) html+='<div class="pill">پلن فعلی</div>';
-else if(canBuy) html+='<button class="btn primary" onclick="requestPlanPurchase('+p.id+')">خرید / ارتقا</button>';
-else html+='<div class="mini">بدون نیاز به خرید</div>';
+else if(canBuy) html+='<button class="btn primary" onclick="requestPlanPurchase('+p.id+')">انتخاب '+labels[d]+'</button>';
 html+='</div>';
 });
+if(!plans.length) html+='<div class="card error">پلن‌های اشتراک هنوز روی سرور فعال نشده‌اند.</div>';
 html+='</section>';
-if(current){
-html+='<section class="card" style="margin-top:16px"><h2>اشتراک فعلی</h2>';
-html+='<div class="row"><span>پلن</span><b>'+esc(currentPlan?.name||'')+'</b></div>';
-html+='<div class="row"><span>وضعیت</span><b>'+esc(current.status||'')+'</b></div>';
-html+='<div class="row"><span>زمان باقی‌مانده</span><b>'+remainingText()+'</b></div>';
-html+='</section>';
-}
+html+='<section class="card" style="margin-top:16px"><div class="notice">بعد از انتخاب مدت، درخواست خرید ثبت می‌شود. سپس در بخش مدیریت/پرداخت‌ها قابل پیگیری و تأیید است.</div></section>';
 plansout.innerHTML=html;
-}catch(e){
-plansout.innerHTML='<div class="card error">'+esc(e.message)+'</div>';
-}
+}catch(e){plansout.innerHTML='<div class="card error">'+esc(e.message)+'</div>';}
 }
 async function requestPlanPurchase(planId){
 try{
 const p=await api('/api/subscription/purchase/',{method:'POST',body:JSON.stringify({plan_id:planId})});
-alert('درخواست خرید ثبت شد. شماره درخواست: '+p.id+'\\nوضعیت فعلی: در انتظار پرداخت');
+alert('درخواست خرید ثبت شد.\nشماره درخواست: '+p.id+'\nمدت: '+(p.plan?.duration_days?fa(p.plan.duration_days)+' روز':'انتخاب‌شده')+'\nوضعیت: در انتظار پرداخت');
 }catch(e){alert(e.message);}
 }
 async function assistantPage(){document.body.innerHTML=shell('assistant',`<div class="top"><div><h1>دستیار مالی هوشمند</h1><p>پاسخ‌های هوشمند بر پایه اطلاعات واقعی حساب، تراکنش‌ها و اقساط شما.</p></div></div><section class="card"><div class="notice">محاسبات قطعی مالی توسط Financial Engine انجام می‌شود و هوش مصنوعی فقط برای تحلیل و توضیح این اطلاعات استفاده می‌شود.</div><form id="chatform" style="margin-top:15px"><div class="field"><label>سؤال شما</label><textarea id="question" rows="4" placeholder="مثلاً موجودی فعلی من چقدر است؟ این ماه چقدر می‌توانم خرج کنم؟"></textarea></div><button class="btn primary" type="submit">پرسیدن از دستیار</button></form><div id="chatout"></div></section>`);chatform.onsubmit=async e=>{e.preventDefault();const q=question.value.trim();if(!q){chatout.innerHTML='<div class="error">لطفاً سؤال خود را وارد کنید.</div>';return}chatout.innerHTML='<div class="loading">در حال بررسی اطلاعات مالی و دریافت پاسخ هوشمند...</div>';try{const r=await api('/api/assistant/chat/',{method:'POST',body:JSON.stringify({message:q})});const answer=String(r?.answer||r?.response||'');if(!answer)throw Error('پاسخ معتبری از دستیار دریافت نشد.');chatout.innerHTML='<div class="card" style="margin-top:14px"><div class="label">پاسخ دستیار</div><p style="white-space:pre-wrap;line-height:2;margin-bottom:0">'+esc(answer)+'</p></div>'}catch(x){const m=String(x.message||'');const friendly=m.includes('503')||m.includes('high demand')?'سرویس هوش مصنوعی موقتاً شلوغ است. چند دقیقه بعد دوباره تلاش کنید.':m.includes('402')||m.includes('Payment Required')?'سرویس هوش مصنوعی برای این حساب اعتبار کافی ندارد.':m;chatout.innerHTML='<div class="error">دریافت پاسخ هوشمند انجام نشد. '+esc(friendly)+'</div>'}}}
