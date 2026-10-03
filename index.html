@@ -128,7 +128,7 @@ const current=sub?.active?sub.subscription:null;
 const currentPlan=current?.plan||null;
 const labels={30:'۱ ماهه',90:'۳ ماهه',180:'۶ ماهه',365:'۱۲ ماهه'};
 const monthlyBase=plans.find(p=>Number(p.duration_days)===30);
-const moneyToman=v=>money(Number(v||0)*10);
+const moneyToman=v=>money(Number(v||0));
 const remainingText=()=>{if(!current?.expires_at)return '—';const ms=new Date(current.expires_at).getTime()-Date.now();if(ms<=0)return 'منقضی شده';const days=Math.floor(ms/86400000),hours=Math.floor((ms%86400000)/3600000);return days>0?(fa(days)+' روز و '+fa(hours)+' ساعت'):(fa(hours)+' ساعت')};
 let html='';
 if(current){
