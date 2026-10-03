@@ -18,6 +18,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
@@ -176,6 +178,9 @@ fun LoginScreen(done: () -> Unit) {
     val scope = rememberCoroutineScope()
     var user by remember { mutableStateOf("") }
     var pass by remember { mutableStateOf("") }
+    var mobile by remember { mutableStateOf("") }
+    var showPassword by remember { mutableStateOf(false) }
+    var showReset by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf("") }
     var register by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
@@ -186,15 +191,41 @@ fun LoginScreen(done: () -> Unit) {
         Spacer(Modifier.height(20.dp))
         if (register) TextField(name, { name = it }, label = { Text("نام") }, modifier = Modifier.fillMaxWidth())
         TextField(user, { user = it }, label = { Text("نام کاربری") }, modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp))
-        OutlinedTextField(pass, { pass = it }, label = { Text("گذرواژه") }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
+        OutlinedTextField(
+            value = pass,
+            onValueChange = { pass = it },
+            label = { Text("گذرواژه") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+            trailingIcon = {
+                TextButton(onClick = { showPassword = !showPassword }) {
+                    Text(if (showPassword) "مخفی" else "نمایش")
+                }
+            },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+        )
+        if (register) {
+            OutlinedTextField(
+                value = mobile,
+                onValueChange = { mobile = it.filter(Char::isDigit).take(11) },
+                label = { Text("شماره موبایل") },
+                modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
+            )
+        }
         if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
         Spacer(Modifier.height(10.dp))
         Button(enabled = !busy, onClick = {
             scope.launch {
                 busy = true; error = ""
                 try {
-                    if (register) call(context, "/api/auth/register/", "POST",
-                        JSONObject().put("username", user.trim()).put("password", pass).put("first_name", name.trim()).toString())
+                    if (register) {
+                        if (mobile.length != 11 || !mobile.startsWith("09")) throw IllegalStateException("شماره موبایل معتبر وارد کنید.")
+                        call(context, "/api/auth/register/", "POST",
+                            JSONObject().put("username", user.trim()).put("password", pass).put("first_name", name.trim()).put("mobile", mobile).toString())
+                    }
                     val r = JSONObject(call(context, "/api/auth/token/", "POST",
                         JSONObject().put("username", user.trim()).put("password", pass).toString()))
                     context.saveTokens(r.getString("access"), r.optString("refresh").ifBlank { null }); done()
@@ -202,9 +233,13 @@ fun LoginScreen(done: () -> Unit) {
                 busy = false
             }
         }, modifier = Modifier.fillMaxWidth()) { Text(if (busy) "در حال انجام..." else if (register) "ساخت حساب" else "ورود") }
-        TextButton(onClick = { register = !register; error = "" }, modifier = Modifier.fillMaxWidth()) {
+        if (!register) {
+            TextButton(onClick = { showReset = true }, modifier = Modifier.fillMaxWidth()) { Text("بازیابی رمز عبور") }
+        }
+        TextButton(onClick = { register = !register; error = ""; showReset = false }, modifier = Modifier.fillMaxWidth()) {
             Text(if (register) "ورود به حساب" else "ساخت حساب جدید")
         }
+        if (showReset) PasswordResetDialog(context, onClose = { showReset = false })
     }
 }
 
@@ -1044,4 +1079,37 @@ fun LoanDialog(onClose:()->Unit,onSaved:()->Unit){
         dismissButton={TextButton(onClick=onClose){Text("انصراف")}}
     )
     if (showDate) JalaliDateDialog(start) { start = it; showDate = false }
+}
+
+
+@Composable
+private fun PasswordResetDialog(context: Context, onClose: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var username by remember { mutableStateOf("") }
+    var message by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("بازیابی رمز عبور") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("نام کاربری را وارد کنید تا درخواست بازیابی برای مدیر ثبت شود.")
+                OutlinedTextField(username, { username = it }, label = { Text("نام کاربری") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                if (message.isNotBlank()) Text(message)
+            }
+        },
+        confirmButton = {
+            Button(enabled = !busy, onClick = {
+                scope.launch {
+                    busy = true
+                    message = ""
+                    try {
+                        message = JSONObject(call(context, "/api/auth/password-reset-request/", "POST", JSONObject().put("username", username.trim()).toString())).optString("detail", "درخواست ثبت شد.")
+                    } catch (e: Exception) { message = e.message ?: "خطا" }
+                    busy = false
+                }
+            }) { Text(if (busy) "در حال ارسال..." else "ثبت درخواست") }
+        },
+        dismissButton = { TextButton(onClick = onClose) { Text("بستن") } }
+    )
 }
