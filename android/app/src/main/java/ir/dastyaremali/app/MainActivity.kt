@@ -583,6 +583,51 @@ fun DashboardMetric(
     }
 }
 
+private val jalaliMonths = listOf("فروردین","اردیبهشت","خرداد","تیر","مرداد","شهریور","مهر","آبان","آذر","دی","بهمن","اسفند")
+
+private fun jalaliYearMonthFromApi(date: String): Pair<Int, Int>? = try {
+    val p = apiToJalali(date).split("/").map { it.toInt() }
+    if (p.size == 3) p[0] to p[1] else null
+} catch (_: Exception) { null }
+
+@Composable
+fun MonthPickerDialog(year: Int, month: Int, onPicked: (Int, Int) -> Unit, onClose: () -> Unit) {
+    var selectedYear by remember { mutableStateOf(year) }
+    AlertDialog(
+        onDismissRequest = onClose,
+        title = {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Text("انتخاب ماه")
+                Row {
+                    TextButton(onClick = { selectedYear-- }) { Text("‹") }
+                    Text(fa(selectedYear.toString()), modifier = Modifier.padding(top = 8.dp))
+                    TextButton(onClick = { selectedYear++ }) { Text("›") }
+                }
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                jalaliMonths.chunked(3).forEachIndexed { rowIndex, row ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        row.forEachIndexed { colIndex, name ->
+                            val m = rowIndex * 3 + colIndex + 1
+                            val selected = selectedYear == year && m == month
+                            Button(onClick = { onPicked(selectedYear, m); onClose() }, modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (selected) Color(0xFF0F766E) else Color(0xFFE8EEEC),
+                                    contentColor = if (selected) Color.White else Color(0xFF34423E)
+                                )
+                            ) { Text(name) }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onClose) { Text("بستن") } }
+    )
+}
+
 @Composable
 fun Transactions(modifier: Modifier, quickType: String? = null, onQuickTypeConsumed: () -> Unit = {}) {
     val context = LocalContext.current
@@ -591,30 +636,99 @@ fun Transactions(modifier: Modifier, quickType: String? = null, onQuickTypeConsu
     var accounts by remember { mutableStateOf(listOf<JSONObject>()) }
     var categories by remember { mutableStateOf(listOf<JSONObject>()) }
     var show by remember { mutableStateOf(false) }
+    var showMonthPicker by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
+    val todayParts = todayJalali().split("/").map { it.toInt() }
+    var selectedYear by remember { mutableStateOf(todayParts[0]) }
+    var selectedMonth by remember { mutableStateOf(todayParts[1]) }
+
     LaunchedEffect(quickType) { if (quickType != null) show = true }
-    fun load() { scope.launch { try {
-        data = JSONArray(call(context, "/api/transactions/")).toObjects()
-        accounts = JSONArray(call(context, "/api/accounts/")).toObjects()
-        categories = JSONArray(call(context, "/api/categories/")).toObjects()
-    } catch(e: Exception) { error = e.message ?: "خطا" } } }
-    LaunchedEffect(Unit) { load() }
-    Column(modifier.fillMaxSize().padding(16.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("تراکنش‌ها", style = MaterialTheme.typography.headlineSmall)
-            Button(onClick = { show = true }) { Text("تراکنش جدید") }
+
+    fun load() {
+        scope.launch {
+            try {
+                data = JSONArray(call(context, "/api/transactions/")).toObjects()
+                accounts = JSONArray(call(context, "/api/accounts/")).toObjects()
+                categories = JSONArray(call(context, "/api/categories/")).toObjects()
+            } catch (e: Exception) { error = e.message ?: "خطا" }
         }
-        if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
-        LazyColumn { items(data) { t ->
-            ListItem(
-                headlineContent = { Text(if (t.optString("transaction_type") == "INCOME") "درآمد" else "هزینه") },
-                supportingContent = { Text(t.optString("description").ifBlank { t.optString("date") }) },
-                trailingContent = { Text(money(t.opt("amount"))) }
-            )
-            HorizontalDivider()
-        } }
     }
+    LaunchedEffect(Unit) { load() }
+
+    val monthData = data.filter { jalaliYearMonthFromApi(it.optString("date")) == (selectedYear to selectedMonth) }
+        .sortedByDescending { it.optString("date") }
+    val grouped = monthData.groupBy { apiToJalali(it.optString("date")) }
+
+    val p = Color(0xFF0F766E)
+    val bg = Color(0xFF17312C)
+    val card = Color(0xFF223B36)
+    val expense = Color(0xFF7F2630)
+    val expenseText = Color(0xFFFF8B8F)
+    val income = Color(0xFF0B6B52)
+    val incomeText = Color(0xFF59F0B0)
+    val text = Color.White
+    val muted = Color(0xFFC2D1CD)
+
+    Column(modifier.fillMaxSize().background(bg).padding(horizontal = 14.dp, vertical = 12.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            OutlinedButton(onClick = { }, colors = ButtonDefaults.outlinedButtonColors(contentColor = p)) { Text("گزارشات") }
+            Text("تراکنش‌ها", style = MaterialTheme.typography.headlineSmall, color = text)
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { show = true }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF75E7CC), contentColor = Color(0xFF18443A)), modifier = Modifier.weight(1f)) { Text("ثبت هزینه") }
+            Button(onClick = { show = true }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF75E7CC), contentColor = Color(0xFF18443A)), modifier = Modifier.weight(1f)) { Text("ثبت درآمد") }
+        }
+        Spacer(Modifier.height(12.dp))
+        OutlinedButton(onClick = { showMonthPicker = true }, modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = text),
+            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFB8C0BC))) {
+            Text("تقویم ماه: " + jalaliMonths[selectedMonth - 1] + " " + fa(selectedYear.toString()), modifier = Modifier.weight(1f))
+            Text("▣", color = p)
+        }
+        Spacer(Modifier.height(12.dp))
+
+        if (monthData.isEmpty()) {
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = card)) {
+                Text("برای " + jalaliMonths[selectedMonth - 1] + " " + fa(selectedYear.toString()) + " تراکنشی ثبت نشده است.", Modifier.padding(18.dp), color = muted)
+            }
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
+                grouped.forEach { (day, transactions) ->
+                    item { Text(formatJalaliDayTitle(day), color = text, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)) }
+                    items(transactions) { t ->
+                        val isIncome = t.optString("transaction_type") == "INCOME"
+                        val title = t.optString("description").ifBlank { if (isIncome) "درآمد" else "هزینه" }
+                        val container = if (isIncome) income else expense
+                        val amountColor = if (isIncome) incomeText else expenseText
+                        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = container), shape = MaterialTheme.shapes.large) {
+                            Row(Modifier.fillMaxWidth().padding(13.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                Text((if (isIncome) "+" else "-") + " " + money(t.opt("amount")), color = amountColor, style = MaterialTheme.typography.titleMedium)
+                                Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
+                                    Text(title, color = Color.White, style = MaterialTheme.typography.titleMedium)
+                                    Text(apiToJalali(t.optString("date")) + " • " + transactionTime(t), color = Color(0xFFD7E2DF), style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (error.isNotBlank()) Text(error, color = Color(0xFFFF8B8F), modifier = Modifier.padding(top = 8.dp))
+    }
+
+    if (showMonthPicker) MonthPickerDialog(selectedYear, selectedMonth, onPicked = { y, m -> selectedYear = y; selectedMonth = m }, onClose = { showMonthPicker = false })
     if (show) TransactionDialog(quickType, accounts, categories, { show = false; onQuickTypeConsumed() }, { load() })
+}
+
+private fun formatJalaliDayTitle(jalali: String): String {
+    val p = jalali.split("/").mapNotNull { it.toIntOrNull() }
+    return if (p.size == 3) fa(p[2].toString()) + " " + (jalaliMonths.getOrNull(p[1] - 1) ?: "") + " " + fa(p[0].toString()) else fa(jalali)
+}
+
+private fun transactionTime(t: JSONObject): String {
+    val raw = t.optString("created_at").ifBlank { t.optString("timestamp") }
+    return if (raw.length >= 16 && raw.contains("T")) raw.substring(11, 16) else ""
 }
 
 @Composable
