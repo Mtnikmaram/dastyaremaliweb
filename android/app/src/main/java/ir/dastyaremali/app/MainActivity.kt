@@ -249,7 +249,7 @@ fun AppShell(onLogout: () -> Unit) {
     var quickTransactionType by remember { mutableStateOf<String?>(null) }
     Scaffold(bottomBar = {
         NavigationBar {
-            listOf("خانه" to "⌂","تراکنش‌ها" to "▤","تعهدات" to "♢","پیامک‌ها" to "✉","گزارشات" to "▥","تنظیمات" to "⚙")
+            listOf("خانه" to "⌂","تراکنش‌ها" to "▤","تعهدات" to "♢","پیامک‌ها" to "✉","اشتراک" to "♛","تنظیمات" to "⚙")
                 .forEachIndexed { i, item ->
                     NavigationBarItem(selected = page == i, onClick = { page = i; if (i != 1) quickTransactionType = null },
                         icon = { Text(item.second, style = MaterialTheme.typography.titleMedium) }, label = { Text(item.first) })
@@ -260,8 +260,8 @@ fun AppShell(onLogout: () -> Unit) {
             1 -> Transactions(Modifier.padding(p), quickTransactionType, { quickTransactionType = null })
             2 -> Loans(Modifier.padding(p))
             3 -> SmsTransactions(Modifier.padding(p))
-            4 -> SimpleSectionScreen(Modifier.padding(p), "گزارشات", "گزارش‌های مالی در این بخش قرار می‌گیرند.")
-            5 -> SimpleSectionScreen(Modifier.padding(p), "تنظیمات", "تنظیمات برنامه")
+            4 -> SubscriptionScreen(Modifier.padding(p))
+            5 -> SettingsScreen(Modifier.padding(p), onLogout)
             else -> Home(Modifier.padding(p), onLogout,
                 onOpenTransaction = { type -> quickTransactionType = type; page = 1 },
                 onOpenPage = { target -> page = target; quickTransactionType = null })
@@ -277,6 +277,230 @@ private fun SimpleSectionScreen(modifier: Modifier, title: String, message: Stri
         Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White)) {
             Text(message, Modifier.padding(20.dp), color = Color(0xFF68738A))
         }
+    }
+}
+
+@Composable
+private fun SubscriptionScreen(modifier: Modifier) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var plans by remember { mutableStateOf(listOf<JSONObject>()) }
+    var current by remember { mutableStateOf<JSONObject?>(null) }
+    var loading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf("") }
+    var busyPlan by remember { mutableStateOf<Int?>(null) }
+    var discount by remember { mutableStateOf("") }
+
+    LaunchedEffect(Unit) {
+        try {
+            val result = JSONObject(call(context, "/api/subscription/plans/"))
+            plans = result.optJSONArray("plans")?.toObjects() ?: emptyList()
+            val me = JSONObject(call(context, "/api/subscription/me/"))
+            current = if (me.optBoolean("active")) me.optJSONObject("subscription") else null
+        } catch (e: Exception) {
+            error = e.message ?: "خطا در دریافت پلن‌ها"
+        } finally {
+            loading = false
+        }
+    }
+
+    val navy = Color(0xFF111B4D)
+    val green = Color(0xFF079B62)
+    val greenDark = Color(0xFF078653)
+    val greenPale = Color(0xFFEAF9F2)
+    val line = Color(0xFFE7EAF0)
+    val muted = Color(0xFF68738A)
+    val purple = Color(0xFF6B28D9)
+    val orange = Color(0xFFF0A51A)
+    val red = Color(0xFFDC3030)
+    val bg = Color(0xFFF7FBFA)
+
+    fun isCurrent(p: JSONObject): Boolean =
+        current?.optJSONObject("plan")?.optString("code") == p.optString("code")
+
+    fun priceRial(p: JSONObject): Any {
+        val raw = p.opt("price")
+        val n = when (raw) {
+            is Number -> raw.toDouble()
+            else -> raw?.toString()?.toDoubleOrNull() ?: 0.0
+        }
+        return n * 10.0
+    }
+
+    fun choosePlan(plan: JSONObject) {
+        val id = plan.optInt("id")
+        if (id <= 0 || isCurrent(plan) || plan.optDouble("price", 0.0) <= 0.0) return
+        scope.launch {
+            busyPlan = id
+            try {
+                val body = JSONObject().put("plan_id", id).toString()
+                val r = JSONObject(call(context, "/api/subscription/purchase/", "POST", body))
+                android.widget.Toast.makeText(
+                    context,
+                    "درخواست خرید ثبت شد. شماره درخواست: " + fa(r.optInt("id").toString()),
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+            } catch (e: Exception) {
+                android.widget.Toast.makeText(context, e.message ?: "ثبت درخواست انجام نشد", android.widget.Toast.LENGTH_LONG).show()
+            } finally {
+                busyPlan = null
+            }
+        }
+    }
+
+    LazyColumn(
+        modifier.fillMaxSize().background(bg),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Text("اشتراک", Modifier.fillMaxWidth(), color = navy, style = MaterialTheme.typography.headlineMedium,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        }
+
+        item {
+            Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large,
+                colors = CardDefaults.cardColors(containerColor = green)) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 18.dp),
+                    horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                    Text("دستیار مالی حرفه‌ای‌تر باش!", color = Color.White,
+                        style = MaterialTheme.typography.headlineSmall,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    Text("با اشتراک، امکانات بیشتر و گزارش‌های پیشرفته در اختیار شماست.",
+                        color = Color.White.copy(alpha = .92f), style = MaterialTheme.typography.bodyLarge,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    Text("♛", color = Color(0xFFFFD34E), style = MaterialTheme.typography.displaySmall)
+                }
+            }
+        }
+
+        if (loading) {
+            item { Box(Modifier.fillMaxWidth().padding(30.dp), contentAlignment = androidx.compose.ui.Alignment.Center) { CircularProgressIndicator(color = green) } }
+        } else if (error.isNotBlank()) {
+            item { Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White)) { Text(error, Modifier.padding(18.dp), color = red) } }
+        } else {
+            val ordered = plans.sortedWith(compareBy { p ->
+                when (p.optString("code")) { "pro" -> 0; "basic" -> 1; "free" -> 2; else -> 3 }
+            })
+            item {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ordered.forEach { plan ->
+                        val code = plan.optString("code")
+                        val currentPlan = isCurrent(plan)
+                        val isPro = code == "pro"
+                        val isBasic = code == "basic"
+                        val accent = if (isPro) orange else if (isBasic) green else Color(0xFFB7BFCC)
+                        val tint = if (isPro) Color(0xFFFFF7DE) else if (isBasic) greenPale else Color(0xFFF3F5F8)
+                        Card(Modifier.weight(1f), shape = MaterialTheme.shapes.large,
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            border = androidx.compose.foundation.BorderStroke(if (isPro) 2.dp else 1.dp, if (isPro) green else line)) {
+                            Column(Modifier.fillMaxWidth().padding(9.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                                if (isPro) {
+                                    Surface(color = greenDark, shape = MaterialTheme.shapes.extraLarge, modifier = Modifier.fillMaxWidth()) {
+                                        Text("محبوب‌ترین", Modifier.padding(vertical = 5.dp), color = Color.White,
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                            style = MaterialTheme.typography.labelSmall)
+                                    }
+                                } else {
+                                    Spacer(Modifier.height(25.dp))
+                                }
+                                Box(Modifier.fillMaxWidth(), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                                    Surface(shape = MaterialTheme.shapes.large, color = tint) {
+                                        Text("♛", Modifier.padding(9.dp), color = accent, style = MaterialTheme.typography.headlineMedium)
+                                    }
+                                }
+                                Text(plan.optString("name"), Modifier.fillMaxWidth(), color = navy,
+                                    style = MaterialTheme.typography.titleLarge,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                                Text(
+                                    plan.optString("description").ifBlank {
+                                        when (code) {
+                                            "pro" -> "مناسب برای کنترل کامل مالی"
+                                            "basic" -> "مناسب برای مدیریت بهتر"
+                                            else -> "مناسب برای شروع"
+                                        }
+                                    },
+                                    Modifier.fillMaxWidth().heightIn(min = 42.dp),
+                                    color = muted, style = MaterialTheme.typography.bodySmall,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                                Surface(shape = MaterialTheme.shapes.medium, color = tint, modifier = Modifier.fillMaxWidth()) {
+                                    Column(Modifier.padding(vertical = 8.dp), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                                        Text(if (plan.optDouble("price", 0.0) <= 0.0) "۰" else money(priceRial(plan)),
+                                            color = if (isPro || isBasic) greenDark else navy,
+                                            style = MaterialTheme.typography.titleLarge)
+                                        Text("ریال / ماه", color = muted, style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
+                                PlanFeature("تعداد حساب‌ها: " + fa(plan.optInt("max_accounts").toString()), true, if (code == "free") green else accent)
+                                PlanFeature("تراکنش ماهانه: " + fa(plan.optInt("max_transactions_per_month").toString()), true, if (code == "free") green else accent)
+                                PlanFeature("مدیریت وام و اقساط", plan.optBoolean("advanced_loans_enabled"), accent)
+                                PlanFeature("دستیار هوشمند (AI)", plan.optBoolean("ai_enabled"), accent)
+                                if (plan.optBoolean("ai_enabled")) {
+                                    PlanFeature("درخواست ماهانه AI: " + fa(plan.optInt("ai_requests_per_month").toString()), true, accent)
+                                }
+                                PlanFeature("گزارش‌های پیشرفته", isPro || isBasic, accent)
+                                PlanFeature("خروجی گزارش (PDF/Excel)", isPro, accent)
+                                PlanFeature("مقایسه ماه به ماه", isPro, accent)
+                                Spacer(Modifier.height(2.dp))
+                                if (currentPlan) {
+                                    Button(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth(),
+                                        colors = ButtonDefaults.buttonColors(disabledContainerColor = Color(0xFFEFF1F5), disabledContentColor = muted)) {
+                                        Text("پلن فعلی شما")
+                                    }
+                                } else if (plan.optDouble("price", 0.0) > 0.0) {
+                                    Button(onClick = { choosePlan(plan) }, enabled = busyPlan == null, modifier = Modifier.fillMaxWidth(),
+                                        colors = ButtonDefaults.buttonColors(containerColor = if (isPro) greenDark else Color.White,
+                                            contentColor = if (isPro) Color.White else greenDark),
+                                        border = if (!isPro) androidx.compose.foundation.BorderStroke(1.dp, greenDark) else null) {
+                                        Text(if (busyPlan == plan.optInt("id")) "در حال ثبت..." else "انتخاب پلن " + if (isPro) "حرفه‌ای" else "پایه")
+                                    }
+                                } else {
+                                    Button(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth(),
+                                        colors = ButtonDefaults.buttonColors(disabledContainerColor = Color(0xFFEFF1F5), disabledContentColor = muted)) {
+                                        Text("پلن فعلی شما")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White),
+                border = androidx.compose.foundation.BorderStroke(1.dp, line), shape = MaterialTheme.shapes.large) {
+                Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Surface(shape = MaterialTheme.shapes.large, color = Color(0xFFF0E9FF)) {
+                        Text("🎁", Modifier.padding(12.dp), style = MaterialTheme.typography.titleLarge)
+                    }
+                    Column(Modifier.weight(1f), horizontalAlignment = androidx.compose.ui.Alignment.End) {
+                        Text("کد تخفیف دارید؟", color = navy, style = MaterialTheme.typography.labelLarge)
+                        Text("کد تخفیف خود را وارد کنید.", color = muted, style = MaterialTheme.typography.labelSmall)
+                    }
+                    OutlinedTextField(discount, { discount = it }, modifier = Modifier.weight(1.2f),
+                        label = { Text("کد تخفیف") }, singleLine = true)
+                    Button(onClick = {
+                        android.widget.Toast.makeText(context,
+                            if (discount.isBlank()) "کد تخفیف را وارد کنید." else "کد تخفیف در حال بررسی است.",
+                            android.widget.Toast.LENGTH_SHORT).show()
+                    }, colors = ButtonDefaults.buttonColors(containerColor = greenDark)) {
+                        Text("اعمال")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlanFeature(text: String, enabled: Boolean, accent: Color) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(if (enabled) "●" else "×", color = if (enabled) accent else Color(0xFFB8BEC8), style = MaterialTheme.typography.labelSmall)
+        Text(text, Modifier.weight(1f), color = if (enabled) Color(0xFF17214D) else Color(0xFF68738A),
+            style = MaterialTheme.typography.labelSmall, textAlign = androidx.compose.ui.text.style.TextAlign.End)
     }
 }
 
