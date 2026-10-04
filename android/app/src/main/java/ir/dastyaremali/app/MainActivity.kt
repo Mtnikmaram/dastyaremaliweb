@@ -6,6 +6,7 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
@@ -35,6 +36,39 @@ import java.util.Locale
 
 private const val API = "https://dastyarfinance.ir"
 private const val PREF = "dastyar_auth"
+
+private suspend fun uploadReceipt(context: Context, path: String, uri: android.net.Uri): String =
+    withContext(Dispatchers.IO) {
+        val resolver = context.contentResolver
+        val bytes = resolver.openInputStream(uri)?.use { it.readBytes() }
+            ?: throw Exception("فایل فیش قابل خواندن نیست.")
+        if (bytes.size > 8 * 1024 * 1024) throw Exception("حجم فیش نباید بیشتر از ۸ مگابایت باشد.")
+        val mime = resolver.getType(uri) ?: "image/jpeg"
+        val boundary = "----DastyarReceipt" + System.currentTimeMillis()
+        val c = URL(API + path).openConnection() as HttpURLConnection
+        c.requestMethod = "POST"
+        c.connectTimeout = 15000
+        c.readTimeout = 30000
+        c.doOutput = true
+        c.setRequestProperty("Authorization", "Bearer " + (context.token() ?: ""))
+        c.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary)
+        c.outputStream.use { out ->
+            fun w(v: String) { out.write(v.toByteArray(Charsets.UTF_8)) }
+            w("--" + boundary + "\r\n")
+            w("Content-Disposition: form-data; name=\"receipt_file\"; filename=\"receipt.jpg\"\r\n")
+            w("Content-Type: " + mime + "\r\n\r\n")
+            out.write(bytes)
+            w("\r\n--" + boundary + "--\r\n")
+        }
+        val response = (if (c.responseCode in 200..299) c.inputStream else c.errorStream)
+            ?.bufferedReader()?.use { it.readText() } ?: ""
+        if (c.responseCode !in 200..299) {
+            val detail = try { JSONObject(response).optString("detail") } catch (_: Exception) { "" }
+            throw Exception(detail.ifBlank { "ارسال فیش انجام نشد." })
+        }
+        response
+    }
+
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -288,8 +322,16 @@ private fun SubscriptionScreen(modifier: Modifier) {
     var current by remember { mutableStateOf<JSONObject?>(null) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf("") }
-    var busyPlan by remember { mutableStateOf<Int?>(null) }
+    var page by remember { mutableStateOf(0) }
+    var selectedPlan by remember { mutableStateOf<JSONObject?>(null) }
+    var purchase by remember { mutableStateOf<JSONObject?>(null) }
+    var receipt by remember { mutableStateOf<android.net.Uri?>(null) }
+    var busy by remember { mutableStateOf(false) }
     var discount by remember { mutableStateOf("") }
+
+    val picker = androidx.activity.compose.rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) {
+        receipt = it
+    }
 
     LaunchedEffect(Unit) {
         try {
@@ -297,200 +339,292 @@ private fun SubscriptionScreen(modifier: Modifier) {
             plans = result.optJSONArray("plans")?.toObjects() ?: emptyList()
             val me = JSONObject(call(context, "/api/subscription/me/"))
             current = if (me.optBoolean("active")) me.optJSONObject("subscription") else null
-        } catch (e: Exception) {
-            error = e.message ?: "خطا در دریافت پلن‌ها"
-        } finally {
-            loading = false
-        }
+        } catch (e: Exception) { error = e.message ?: "خطا در دریافت پلن‌ها" }
+        finally { loading = false }
     }
 
     val navy = Color(0xFF111B4D)
     val green = Color(0xFF079B62)
-    val greenDark = Color(0xFF078653)
-    val greenPale = Color(0xFFEAF9F2)
-    val line = Color(0xFFE7EAF0)
+    val darkGreen = Color(0xFF087E62)
+    val pale = Color(0xFFE9FAF3)
+    val line = Color(0xFFE4E8EE)
     val muted = Color(0xFF68738A)
-    val purple = Color(0xFF6B28D9)
     val orange = Color(0xFFF0A51A)
-    val red = Color(0xFFDC3030)
+    val blue = Color(0xFF2583E8)
     val bg = Color(0xFFF7FBFA)
-
-    fun isCurrent(p: JSONObject): Boolean =
-        current?.optJSONObject("plan")?.optString("code") == p.optString("code")
 
     fun priceRial(p: JSONObject): Any {
         val raw = p.opt("price")
-        val n = when (raw) {
-            is Number -> raw.toDouble()
-            else -> raw?.toString()?.toDoubleOrNull() ?: 0.0
-        }
+        val n = if (raw is Number) raw.toDouble() else raw?.toString()?.toDoubleOrNull() ?: 0.0
         return n * 10.0
     }
+    fun isCurrent(p: JSONObject) = current?.optJSONObject("plan")?.optString("code") == p.optString("code")
+    fun back() { page = if (page > 0) page - 1 else 0 }
 
-    fun choosePlan(plan: JSONObject) {
-        val id = plan.optInt("id")
-        if (id <= 0 || isCurrent(plan) || plan.optDouble("price", 0.0) <= 0.0) return
+    fun startPurchase(p: JSONObject) {
+        selectedPlan = p
+        page = 1
+    }
+
+    fun createPurchase() {
+        val p = selectedPlan ?: return
         scope.launch {
-            busyPlan = id
+            busy = true
             try {
-                val body = JSONObject().put("plan_id", id).toString()
-                val r = JSONObject(call(context, "/api/subscription/purchase/", "POST", body))
-                android.widget.Toast.makeText(
-                    context,
-                    "درخواست خرید ثبت شد. شماره درخواست: " + fa(r.optInt("id").toString()),
-                    android.widget.Toast.LENGTH_LONG
-                ).show()
+                purchase = JSONObject(call(context, "/api/subscription/purchase/", "POST",
+                    JSONObject().put("plan_id", p.optInt("id")).toString()))
+                page = 2
             } catch (e: Exception) {
                 android.widget.Toast.makeText(context, e.message ?: "ثبت درخواست انجام نشد", android.widget.Toast.LENGTH_LONG).show()
-            } finally {
-                busyPlan = null
-            }
+            } finally { busy = false }
         }
     }
 
-    LazyColumn(
-        modifier.fillMaxSize().background(bg),
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item {
-            Text("اشتراک", Modifier.fillMaxWidth(), color = navy, style = MaterialTheme.typography.headlineMedium,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+    fun sendReceipt() {
+        val p = purchase ?: return
+        val uri = receipt ?: run {
+            android.widget.Toast.makeText(context, "لطفاً تصویر فیش را انتخاب کنید.", android.widget.Toast.LENGTH_SHORT).show()
+            return
         }
+        scope.launch {
+            busy = true
+            try {
+                uploadReceipt(context, "/api/subscription/purchase/" + p.optInt("id") + "/receipt/", uri)
+                page = 3
+            } catch (e: Exception) {
+                android.widget.Toast.makeText(context, e.message ?: "ارسال فیش انجام نشد", android.widget.Toast.LENGTH_LONG).show()
+            } finally { busy = false }
+        }
+    }
 
-        item {
-            Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large,
-                colors = CardDefaults.cardColors(containerColor = green)) {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 18.dp),
-                    horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
-                    Text("دستیار مالی حرفه‌ای‌تر باش!", color = Color.White,
-                        style = MaterialTheme.typography.headlineSmall,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                    Text("با اشتراک، امکانات بیشتر و گزارش‌های پیشرفته در اختیار شماست.",
-                        color = Color.White.copy(alpha = .92f), style = MaterialTheme.typography.bodyLarge,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                    Text("♛", color = Color(0xFFFFD34E), style = MaterialTheme.typography.displaySmall)
-                }
+    if (loading) {
+        Box(modifier.fillMaxSize().background(bg), contentAlignment = androidx.compose.ui.Alignment.Center) {
+            CircularProgressIndicator(color = green)
+        }
+        return
+    }
+    if (error.isNotBlank()) {
+        Column(modifier.fillMaxSize().background(bg).padding(20.dp), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+            Text("اشتراک", color = navy, style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.height(18.dp))
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Text(error, Modifier.padding(20.dp), color = Color(0xFFDC3030))
             }
         }
+        return
+    }
 
-        if (loading) {
-            item { Box(Modifier.fillMaxWidth().padding(30.dp), contentAlignment = androidx.compose.ui.Alignment.Center) { CircularProgressIndicator(color = green) } }
-        } else if (error.isNotBlank()) {
-            item { Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White)) { Text(error, Modifier.padding(18.dp), color = red) } }
-        } else {
-            val ordered = plans.sortedWith(compareBy { p ->
-                when (p.optString("code")) { "pro" -> 0; "basic" -> 1; "free" -> 2; else -> 3 }
-            })
+    val ordered = plans.sortedWith(compareBy { p ->
+        when (p.optString("code")) { "free" -> 0; "basic" -> 1; "pro" -> 2; else -> 3 }
+    })
+
+    if (page == 0) {
+        LazyColumn(modifier.fillMaxSize().background(bg), contentPadding = PaddingValues(12.dp, 14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            item {
+                Text("اشتراک", Modifier.fillMaxWidth(), color = navy, style = MaterialTheme.typography.headlineMedium,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            }
+            item {
+                Card(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large, colors = CardDefaults.cardColors(containerColor = green)) {
+                    Column(Modifier.fillMaxWidth().padding(18.dp), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                        Text("دستیار مالی حرفه‌ای‌تر باش!", color = Color.White, style = MaterialTheme.typography.headlineSmall)
+                        Text("با اشتراک، امکانات بیشتر و گزارش‌های پیشرفته در اختیار شماست.",
+                            color = Color.White.copy(alpha = .92f), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                        Text("♛", color = Color(0xFFFFD34E), style = MaterialTheme.typography.displaySmall)
+                    }
+                }
+            }
             item {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ordered.forEach { plan ->
-                        val code = plan.optString("code")
-                        val currentPlan = isCurrent(plan)
-                        val isPro = code == "pro"
-                        val isBasic = code == "basic"
-                        val accent = if (isPro) orange else if (isBasic) green else Color(0xFFB7BFCC)
-                        val tint = if (isPro) Color(0xFFFFF7DE) else if (isBasic) greenPale else Color(0xFFF3F5F8)
-                        Card(Modifier.weight(1f), shape = MaterialTheme.shapes.large,
-                            colors = CardDefaults.cardColors(containerColor = Color.White),
-                            border = androidx.compose.foundation.BorderStroke(if (isPro) 2.dp else 1.dp, if (isPro) green else line)) {
-                            Column(Modifier.fillMaxWidth().padding(9.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                                if (isPro) {
-                                    Surface(color = greenDark, shape = MaterialTheme.shapes.extraLarge, modifier = Modifier.fillMaxWidth()) {
-                                        Text("محبوب‌ترین", Modifier.padding(vertical = 5.dp), color = Color.White,
-                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                            style = MaterialTheme.typography.labelSmall)
-                                    }
-                                } else {
-                                    Spacer(Modifier.height(25.dp))
-                                }
+                    ordered.forEach { p ->
+                        val code = p.optString("code")
+                        val pro = code == "pro"
+                        val basic = code == "basic"
+                        val accent = if (pro) orange else if (basic) green else Color(0xFF9DA7B8)
+                        val tint = if (pro) Color(0xFFFFF7DE) else if (basic) pale else Color(0xFFF3F5F8)
+                        Card(Modifier.weight(1f), shape = MaterialTheme.shapes.large, colors = CardDefaults.cardColors(containerColor = Color.White),
+                            border = androidx.compose.foundation.BorderStroke(if (pro) 2.dp else 1.dp, if (pro) green else line)) {
+                            Column(Modifier.padding(9.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                if (pro) Surface(color = darkGreen, shape = MaterialTheme.shapes.extraLarge, modifier = Modifier.fillMaxWidth()) {
+                                    Text("محبوب‌ترین", Modifier.padding(vertical = 5.dp), color = Color.White, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                                } else Spacer(Modifier.height(25.dp))
                                 Box(Modifier.fillMaxWidth(), contentAlignment = androidx.compose.ui.Alignment.Center) {
                                     Surface(shape = MaterialTheme.shapes.large, color = tint) {
                                         Text("♛", Modifier.padding(9.dp), color = accent, style = MaterialTheme.typography.headlineMedium)
                                     }
                                 }
-                                Text(plan.optString("name"), Modifier.fillMaxWidth(), color = navy,
-                                    style = MaterialTheme.typography.titleLarge,
+                                Text(p.optString("name"), Modifier.fillMaxWidth(), color = navy, style = MaterialTheme.typography.titleLarge,
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                                Text(
-                                    plan.optString("description").ifBlank {
-                                        when (code) {
-                                            "pro" -> "مناسب برای کنترل کامل مالی"
-                                            "basic" -> "مناسب برای مدیریت بهتر"
-                                            else -> "مناسب برای شروع"
-                                        }
-                                    },
-                                    Modifier.fillMaxWidth().heightIn(min = 42.dp),
-                                    color = muted, style = MaterialTheme.typography.bodySmall,
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                                Text(p.optString("description").ifBlank { if (pro) "مناسب برای کنترل کامل مالی" else if (basic) "مناسب برای مدیریت بهتر" else "مناسب برای شروع" },
+                                    Modifier.fillMaxWidth().heightIn(min = 40.dp), color = muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    style = MaterialTheme.typography.bodySmall)
                                 Surface(shape = MaterialTheme.shapes.medium, color = tint, modifier = Modifier.fillMaxWidth()) {
                                     Column(Modifier.padding(vertical = 8.dp), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
-                                        Text(if (plan.optDouble("price", 0.0) <= 0.0) "۰" else money(priceRial(plan)),
-                                            color = if (isPro || isBasic) greenDark else navy,
-                                            style = MaterialTheme.typography.titleLarge)
+                                        Text(if (p.optDouble("price", 0.0) <= 0) "۰" else money(priceRial(p)),
+                                            color = if (pro || basic) darkGreen else navy, style = MaterialTheme.typography.titleLarge)
                                         Text("ریال / ماه", color = muted, style = MaterialTheme.typography.labelSmall)
                                     }
                                 }
-                                PlanFeature("تعداد حساب‌ها: " + fa(plan.optInt("max_accounts").toString()), true, if (code == "free") green else accent)
-                                PlanFeature("تراکنش ماهانه: " + fa(plan.optInt("max_transactions_per_month").toString()), true, if (code == "free") green else accent)
-                                PlanFeature("مدیریت وام و اقساط", plan.optBoolean("advanced_loans_enabled"), accent)
-                                PlanFeature("دستیار هوشمند (AI)", plan.optBoolean("ai_enabled"), accent)
-                                if (plan.optBoolean("ai_enabled")) {
-                                    PlanFeature("درخواست ماهانه AI: " + fa(plan.optInt("ai_requests_per_month").toString()), true, accent)
-                                }
-                                PlanFeature("گزارش‌های پیشرفته", isPro || isBasic, accent)
-                                PlanFeature("خروجی گزارش (PDF/Excel)", isPro, accent)
-                                PlanFeature("مقایسه ماه به ماه", isPro, accent)
-                                Spacer(Modifier.height(2.dp))
-                                if (currentPlan) {
-                                    Button(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth(),
-                                        colors = ButtonDefaults.buttonColors(disabledContainerColor = Color(0xFFEFF1F5), disabledContentColor = muted)) {
-                                        Text("پلن فعلی شما")
-                                    }
-                                } else if (plan.optDouble("price", 0.0) > 0.0) {
-                                    Button(onClick = { choosePlan(plan) }, enabled = busyPlan == null, modifier = Modifier.fillMaxWidth(),
-                                        colors = ButtonDefaults.buttonColors(containerColor = if (isPro) greenDark else Color.White,
-                                            contentColor = if (isPro) Color.White else greenDark),
-                                        border = if (!isPro) androidx.compose.foundation.BorderStroke(1.dp, greenDark) else null) {
-                                        Text(if (busyPlan == plan.optInt("id")) "در حال ثبت..." else "انتخاب پلن " + if (isPro) "حرفه‌ای" else "پایه")
-                                    }
-                                } else {
-                                    Button(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth(),
-                                        colors = ButtonDefaults.buttonColors(disabledContainerColor = Color(0xFFEFF1F5), disabledContentColor = muted)) {
-                                        Text("پلن فعلی شما")
-                                    }
+                                PlanFeature("تعداد حساب‌ها: " + fa(p.optInt("max_accounts").toString()), true, if (code == "free") green else accent)
+                                PlanFeature("تراکنش ماهانه: " + fa(p.optInt("max_transactions_per_month").toString()), true, if (code == "free") green else accent)
+                                PlanFeature("مدیریت وام و اقساط", p.optBoolean("advanced_loans_enabled"), accent)
+                                PlanFeature("دستیار هوشمند (AI)", p.optBoolean("ai_enabled"), accent)
+                                if (p.optBoolean("ai_enabled")) PlanFeature("درخواست ماهانه AI: " + fa(p.optInt("ai_requests_per_month").toString()), true, accent)
+                                PlanFeature("گزارش‌های پیشرفته", pro || basic, accent)
+                                PlanFeature("خروجی گزارش (PDF/Excel)", pro, accent)
+                                PlanFeature("مقایسه ماه به ماه", pro, accent)
+                                Button(onClick = { if (code != "free") startPurchase(p) }, enabled = code != "free" && !isCurrent(p),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.buttonColors(containerColor = if (pro) darkGreen else Color.White,
+                                        contentColor = if (pro) Color.White else darkGreen,
+                                        disabledContainerColor = Color(0xFFEFF1F5), disabledContentColor = muted),
+                                    border = if (!pro && code != "free" && !isCurrent(p)) androidx.compose.foundation.BorderStroke(1.dp, darkGreen) else null) {
+                                    Text(if (isCurrent(p)) "پلن فعلی شما" else if (code == "free") "فعلی" else "مشاهده جزئیات و خرید")
                                 }
                             }
                         }
                     }
                 }
             }
-        }
-
-        item {
-            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White),
-                border = androidx.compose.foundation.BorderStroke(1.dp, line), shape = MaterialTheme.shapes.large) {
-                Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Surface(shape = MaterialTheme.shapes.large, color = Color(0xFFF0E9FF)) {
-                        Text("🎁", Modifier.padding(12.dp), style = MaterialTheme.typography.titleLarge)
-                    }
-                    Column(Modifier.weight(1f), horizontalAlignment = androidx.compose.ui.Alignment.End) {
-                        Text("کد تخفیف دارید؟", color = navy, style = MaterialTheme.typography.labelLarge)
-                        Text("کد تخفیف خود را وارد کنید.", color = muted, style = MaterialTheme.typography.labelSmall)
-                    }
-                    OutlinedTextField(discount, { discount = it }, modifier = Modifier.weight(1.2f),
-                        label = { Text("کد تخفیف") }, singleLine = true)
-                    Button(onClick = {
-                        android.widget.Toast.makeText(context,
-                            if (discount.isBlank()) "کد تخفیف را وارد کنید." else "کد تخفیف در حال بررسی است.",
-                            android.widget.Toast.LENGTH_SHORT).show()
-                    }, colors = ButtonDefaults.buttonColors(containerColor = greenDark)) {
-                        Text("اعمال")
+            item {
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, line), shape = MaterialTheme.shapes.large) {
+                    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        Surface(shape = MaterialTheme.shapes.large, color = Color(0xFFF0E9FF)) { Text("🎁", Modifier.padding(12.dp)) }
+                        Column(Modifier.weight(1f), horizontalAlignment = androidx.compose.ui.Alignment.End) {
+                            Text("کد تخفیف دارید؟", color = navy, style = MaterialTheme.typography.labelLarge)
+                            Text("کد تخفیف خود را وارد کنید.", color = muted, style = MaterialTheme.typography.labelSmall)
+                        }
+                        OutlinedTextField(discount, { discount = it }, Modifier.weight(1.2f), label = { Text("کد تخفیف") }, singleLine = true)
+                        Button(onClick = { android.widget.Toast.makeText(context, if (discount.isBlank()) "کد تخفیف را وارد کنید." else "کد تخفیف در حال بررسی است.", android.widget.Toast.LENGTH_SHORT).show() },
+                            colors = ButtonDefaults.buttonColors(containerColor = darkGreen)) { Text("اعمال") }
                     }
                 }
             }
         }
+    } else if (page == 1) {
+        val p = selectedPlan ?: return
+        LazyColumn(modifier.fillMaxSize().background(bg), contentPadding = PaddingValues(12.dp, 10.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            item { TopBackTitle("جزئیات اشتراک", ::back, navy) }
+            item {
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = pale), shape = MaterialTheme.shapes.large) {
+                    Column(Modifier.fillMaxWidth().padding(18.dp), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                        Text("⭐", style = MaterialTheme.typography.displaySmall)
+                        Text("اشتراک " + p.optString("name"), color = navy, style = MaterialTheme.typography.headlineSmall)
+                        Text(money(priceRial(p)) + " ریال", color = navy, style = MaterialTheme.typography.headlineMedium)
+                        Text("به‌صورت ماهانه", color = muted)
+                    }
+                }
+            }
+            item {
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), border = androidx.compose.foundation.BorderStroke(1.dp, line)) {
+                    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
+                        Text("امکانات این پلن", color = navy, style = MaterialTheme.typography.titleLarge)
+                        PlanFeature("تمام امکانات نسخه رایگان", true, green)
+                        PlanFeature("گزارش‌های پیشرفته و نمودارها", true, green)
+                        PlanFeature("مدیریت کامل تعهدات و اقساط", true, green)
+                        PlanFeature("پشتیبان‌گیری از اطلاعات", true, green)
+                        PlanFeature("دسترسی به امکانات تکمیلی اپلیکیشن", true, green)
+                        PlanFeature("به‌روزرسانی‌های منظم", true, green)
+                        PlanFeature("پشتیبانی از طریق تلگرام و ایمیل", true, green)
+                    }
+                }
+            }
+            item { Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFFEAF3FF)), shape = MaterialTheme.shapes.large) {
+                Text("بعد از پرداخت و ارسال فیش، درخواست شما بررسی و اشتراک فعال خواهد شد. معمولاً این فرایند طی چند ساعت انجام می‌شود.", Modifier.padding(15.dp), color = Color(0xFF245A93))
+            } }
+            item { Button(onClick = { createPurchase() }, enabled = !busy, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = darkGreen), shape = MaterialTheme.shapes.large) {
+                Text(if (busy) "در حال ثبت درخواست..." else "ادامه و پرداخت")
+            } }
+        }
+    } else if (page == 2) {
+        val p = selectedPlan ?: return
+        LazyColumn(modifier.fillMaxSize().background(bg), contentPadding = PaddingValues(12.dp, 10.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            item { TopBackTitle("پرداخت و ارسال فیش", ::back, navy) }
+            item {
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = pale), shape = MaterialTheme.shapes.large) {
+                    Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        Text("⭐", style = MaterialTheme.typography.headlineMedium)
+                        Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
+                            Text("اشتراک " + p.optString("name"), color = navy, style = MaterialTheme.typography.titleLarge)
+                            Text(money(priceRial(p)) + " ریال", color = navy, style = MaterialTheme.typography.titleLarge)
+                            Text("به‌صورت ماهانه", color = muted)
+                        }
+                    }
+                }
+            }
+            item {
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), border = androidx.compose.foundation.BorderStroke(1.dp, line)) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                        Text("➊  واریز مبلغ به شماره کارت", color = navy, style = MaterialTheme.typography.titleLarge)
+                        Text("لطفاً مبلغ " + money(priceRial(p)) + " ریال را به شماره کارت زیر واریز کنید.", color = muted)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Button(onClick = {
+                                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                cm.setPrimaryClip(android.content.ClipData.newPlainText("شماره کارت", "6219••••••••3892"))
+                                android.widget.Toast.makeText(context, "شماره کارت کپی شد.", android.widget.Toast.LENGTH_SHORT).show()
+                            }, colors = ButtonDefaults.buttonColors(containerColor = darkGreen)) { Text("کپی") }
+                            Text("۶۲۱۹ •••• •••• ۳۸۹۲", color = navy, style = MaterialTheme.typography.titleMedium)
+                        }
+                        HorizontalDivider(color = line)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("بانک", color = muted); Text("بلو", color = navy) }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("به نام", color = muted); Text("صاحب حساب", color = navy) }
+                    }
+                }
+            }
+            item {
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), border = androidx.compose.foundation.BorderStroke(1.dp, line)) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                        Text("➋  ارسال تصویر فیش واریزی", color = navy, style = MaterialTheme.typography.titleLarge)
+                        Text("بعد از پرداخت، تصویر فیش واریزی را در این بخش بارگذاری کنید.", color = muted, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                        OutlinedButton(onClick = { picker.launch("*/*") }, modifier = Modifier.fillMaxWidth()) {
+                            Text(if (receipt == null) "↑  انتخاب تصویر فیش" else "✓  فیش انتخاب شد")
+                        }
+                        Text("JPG، PNG، PDF مجاز • حداکثر حجم: ۸ مگابایت", color = muted, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+            item { Button(onClick = { sendReceipt() }, enabled = !busy && receipt != null, modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = darkGreen), shape = MaterialTheme.shapes.large) {
+                Text(if (busy) "در حال ارسال..." else "ارسال فیش به بررسی درخواست")
+            } }
+        }
+    } else {
+        LazyColumn(modifier.fillMaxSize().background(bg), contentPadding = PaddingValues(12.dp, 10.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            item { TopBackTitle("درخواست ارسال شد", ::back, navy) }
+            item {
+                Column(Modifier.fillMaxWidth().padding(top = 45.dp), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                    Surface(shape = MaterialTheme.shapes.extraLarge, color = pale) { Text("✓", Modifier.padding(24.dp), color = green, style = MaterialTheme.typography.displayLarge) }
+                    Spacer(Modifier.height(18.dp))
+                    Text("درخواست شما ثبت شد", color = navy, style = MaterialTheme.typography.headlineSmall)
+                    Text("تصویر فیش واریزی با موفقیت ارسال شد.", color = muted, modifier = Modifier.padding(top = 7.dp))
+                }
+            }
+            item { Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = pale), shape = MaterialTheme.shapes.large) {
+                Text("درخواست شما در حال بررسی است. پس از تأیید پرداخت، اشتراک شما فعال خواهد شد. معمولاً این فرایند طی چند ساعت انجام می‌شود.", Modifier.padding(18.dp), color = Color(0xFF245A6A),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            } }
+            item { Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), border = androidx.compose.foundation.BorderStroke(1.dp, line)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Text("نوع اشتراک", color = muted); Text(selectedPlan?.optString("name") ?: "اشتراک", color = navy, style = MaterialTheme.typography.titleMedium)
+                    Text("مبلغ", color = muted); Text(if (selectedPlan != null) money(priceRial(selectedPlan!!)) + " ریال" else "-", color = navy, style = MaterialTheme.typography.titleMedium)
+                    Text("تاریخ درخواست", color = muted); Text(todayJalali(), color = navy)
+                    Surface(shape = MaterialTheme.shapes.extraLarge, color = Color(0xFFFFF1C9)) { Text("⏱ در حال بررسی", Modifier.padding(horizontal = 12.dp, vertical = 6.dp), color = Color(0xFF8A6500)) }
+                }
+            } }
+            item { Button(onClick = { page = 0 }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = darkGreen), shape = MaterialTheme.shapes.large) {
+                Text("بازگشت به اشتراک‌ها")
+            } }
+        }
+    }
+}
+
+@Composable
+private fun TopBackTitle(title: String, onBack: () -> Unit, color: Color) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Text("‹", color = color, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.clickable { onBack() })
+        Text(title, color = color, style = MaterialTheme.typography.headlineSmall)
+        Spacer(Modifier.width(28.dp))
     }
 }
 
