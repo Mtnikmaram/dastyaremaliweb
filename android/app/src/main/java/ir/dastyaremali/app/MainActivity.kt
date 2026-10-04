@@ -281,6 +281,169 @@ private fun SimpleSectionScreen(modifier: Modifier, title: String, message: Stri
 }
 
 @Composable
+private fun SettingsScreen(modifier: Modifier, onLogout: () -> Unit) {
+    val context = LocalContext.current
+    var profile by remember { mutableStateOf<JSONObject?>(null) }
+    var pendingCount by remember { mutableStateOf(0) }
+    var darkMode by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        try { profile = JSONObject(call(context, "/api/auth/profile/")) } catch (_: Exception) {}
+        pendingCount = if (pendingSms(context) != null) 1 else 0
+    }
+
+    val bg = Color(0xFFF7F9FC)
+    val navy = Color(0xFF111B4D)
+    val muted = Color(0xFF68738A)
+    val green = Color(0xFF0F9F6E)
+    val paleGreen = Color(0xFFE9F8F0)
+    val blue = Color(0xFF1877E8)
+    val orange = Color(0xFFF09A17)
+    val purple = Color(0xFF6B28D9)
+    val red = Color(0xFFDC3030)
+
+    fun displayName(): String =
+        profile?.optString("first_name").orEmpty().ifBlank {
+            profile?.optString("username").orEmpty().ifBlank { "کاربر" }
+        }
+
+    LazyColumn(
+        modifier.fillMaxSize().background(bg),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+            ) {
+                Text("تنظیمات", color = navy, style = MaterialTheme.typography.headlineSmall)
+                Text("♧", color = red, style = MaterialTheme.typography.headlineMedium)
+            }
+            Text(
+                "مدیریت حساب و تنظیمات برنامه",
+                Modifier.fillMaxWidth(),
+                color = muted,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+        }
+
+        item {
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFFF0F5FF)), shape = MaterialTheme.shapes.large) {
+                Row(
+                    Modifier.fillMaxWidth().padding(18.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                ) {
+                    Button(
+                        onClick = {},
+                        colors = ButtonDefaults.buttonColors(containerColor = paleGreen, contentColor = green),
+                        shape = MaterialTheme.shapes.extraLarge
+                    ) { Text("ویرایش اطلاعات  ✎") }
+                    Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
+                        Text(displayName(), color = navy, style = MaterialTheme.typography.titleLarge)
+                        Text(profile?.optString("mobile").orEmpty().ifBlank { "شماره موبایل ثبت نشده" }, color = muted)
+                        Text(profile?.optString("email").orEmpty().ifBlank { "ایمیل ثبت نشده" }, color = muted)
+                    }
+                }
+            }
+        }
+
+        item {
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFFEAF9F2)), shape = MaterialTheme.shapes.large) {
+                Row(Modifier.fillMaxWidth().padding(18.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Button(onClick = {}, colors = ButtonDefaults.buttonColors(containerColor = green), shape = MaterialTheme.shapes.extraLarge) {
+                        Text("مدیریت اشتراک", color = Color.White)
+                    }
+                    Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
+                        Text("وضعیت اشتراک", color = navy, style = MaterialTheme.typography.titleLarge)
+                        Surface(shape = MaterialTheme.shapes.extraLarge, color = green) {
+                            Text("رایگان  ♛", Modifier.padding(horizontal = 14.dp, vertical = 7.dp), color = Color.White)
+                        }
+                        Text("دسترسی به امکانات پایه", color = muted, modifier = Modifier.padding(top = 5.dp))
+                    }
+                }
+            }
+        }
+
+        item { Text("تنظیمات حساب", Modifier.fillMaxWidth(), color = navy, style = MaterialTheme.typography.titleLarge, textAlign = androidx.compose.ui.text.style.TextAlign.End) }
+        item {
+            SettingsGroup(
+                rows = listOf(
+                    Triple("اطلاعات حساب کاربری", "مشاهده و ویرایش اطلاعات شخصی", blue),
+                    Triple("تغییر رمز عبور", "به‌روزرسانی رمز عبور حساب", orange),
+                    Triple("اعلان‌ها", "مدیریت اعلان‌های برنامه و پیامک‌ها", green),
+                    Triple("تنظیمات ظاهر", if (darkMode) "حالت تاریک" else "حالت روشن", purple),
+                    Triple("زبان و منطقه", "فارسی (ایران)", blue)
+                ),
+                onRow = { index -> if (index == 3) darkMode = !darkMode }
+            )
+        }
+
+        item {
+            SettingsGroup(
+                rows = listOf(
+                    Triple("پشتیبان‌گیری و بازیابی", "ذخیره و بازیابی اطلاعات شما", green),
+                    Triple("درباره برنامه", "نسخه 1.0.0", purple),
+                    Triple("خروج از حساب", "خروج و بازگشت به صفحه ورود", red)
+                ),
+                onRow = { index -> if (index == 2) onLogout() }
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsGroup(
+    rows: List<Triple<String, String, Color>>,
+    onRow: (Int) -> Unit
+) {
+    Card(
+        Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE4E8EE)),
+        shape = MaterialTheme.shapes.large
+    ) {
+        Column {
+            rows.forEachIndexed { index, row ->
+                Row(
+                    Modifier.fillMaxWidth().clickable { onRow(index) }.padding(horizontal = 12.dp, vertical = 13.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                ) {
+                    Text("›", color = Color(0xFF111B4D), style = MaterialTheme.typography.headlineSmall)
+                    Row(
+                        Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f), horizontalAlignment = androidx.compose.ui.Alignment.End) {
+                            Text(row.first, color = Color(0xFF111B4D), style = MaterialTheme.typography.titleMedium)
+                            Text(row.second, color = Color(0xFF68738A), style = MaterialTheme.typography.bodySmall)
+                        }
+                        Surface(shape = MaterialTheme.shapes.large, color = row.third.copy(alpha = 0.10f)) {
+                            Text(
+                                when (row.third) {
+                                    Color(0xFFF09A17) -> "▢"
+                                    Color(0xFF6B28D9) -> "◐"
+                                    Color(0xFFDC3030) -> "⇥"
+                                    Color(0xFF1877E8) -> "◎"
+                                    else -> "♧"
+                                },
+                                Modifier.padding(10.dp),
+                                color = row.third
+                            )
+                        }
+                    }
+                }
+                if (index < rows.lastIndex) HorizontalDivider(color = Color(0xFFE9ECF1))
+            }
+        }
+    }
+}
+
+@Composable
 fun SmsTransactions(modifier: Modifier) {
     val context = LocalContext.current
     var pending by remember { mutableStateOf(pendingSms(context)) }
