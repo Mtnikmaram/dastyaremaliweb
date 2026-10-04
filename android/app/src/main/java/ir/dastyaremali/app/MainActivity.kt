@@ -389,12 +389,6 @@ fun LoginScreen(done: () -> Unit) {
                 )
             }
 
-            if (register) {
-                item {
-                    AuthField(passConfirmValue = "", onValueChange = {}, label = "", icon = "")
-                }
-            }
-
             if (!register) {
                 item {
                     Row(
@@ -1221,7 +1215,7 @@ fun Home(modifier: Modifier, logout: () -> Unit, onOpenTransaction: (String) -> 
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.Top) {
                             Column {
                                 Text("نسبت به ماه قبل", color = Color(0xFFCCE6E2), style = MaterialTheme.typography.labelMedium)
-                                Text("+\${fa("0")}٪", color = Color(0xFF86EFAC), style = MaterialTheme.typography.titleLarge)
+                                Text("+۰٪", color = Color(0xFF86EFAC), style = MaterialTheme.typography.titleLarge)
                             }
                             Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
                                 Text("موجودی کل", color = Color.White, style = MaterialTheme.typography.titleMedium)
@@ -2018,7 +2012,7 @@ fun Loans(modifier: Modifier) {
     }
 }
 @Composable private fun DetailBox(title: String, value: String, unit: String, bg: Color, accent: Color) {
-    Card(Modifier.weight(1f), colors = CardDefaults.cardColors(containerColor = bg)) {
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = bg)) {
         Column(Modifier.padding(10.dp)) { Text(title, color = Color(0xFF68738A), style = MaterialTheme.typography.labelSmall); Text(value, color = accent, style = MaterialTheme.typography.titleMedium); Text(unit, color = accent, style = MaterialTheme.typography.labelSmall) }
     }
 }
@@ -2051,7 +2045,7 @@ fun Loans(modifier: Modifier) {
             item { AmountField("مبلغ اصلی (ریال)", principal) { principal = it } }
             item {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    AmountField("سود کل", interest, Modifier.weight(1f)) { interest = it }
+                    Box(Modifier.weight(1f)) { AmountField("سود کل", interest) { interest = it } }
                     OutlinedTextField(count, { count = it.filter(Char::isDigit) }, label = { Text("تعداد اقساط") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f))
                 }
             }
