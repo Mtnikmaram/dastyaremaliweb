@@ -74,10 +74,8 @@ private suspend fun uploadReceipt(context: Context, path: String, uri: android.n
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (android.os.Build.VERSION.SDK_INT >= 23 &&
-            checkSelfPermission(Manifest.permission.RECEIVE_SMS) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(Manifest.permission.RECEIVE_SMS), 1001)
-        }
+        // SMS permission is requested only when the user opens the SMS section.
+        // Do not block/crash the app during startup on newer Android/Samsung builds.
         setContent { DastyarApp() }
     }
 }
