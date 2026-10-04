@@ -873,306 +873,336 @@ fun Loans(modifier: Modifier) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var loans by remember { mutableStateOf(listOf<JSONObject>()) }
-    var installments by remember { mutableStateOf(listOf<JSONObject>()) }
-    var accounts by remember { mutableStateOf(listOf<JSONObject>()) }
-    var categories by remember { mutableStateOf(listOf<JSONObject>()) }
     var selected by remember { mutableStateOf<JSONObject?>(null) }
+    var installments by remember { mutableStateOf(listOf<JSONObject>()) }
     var showNew by remember { mutableStateOf(false) }
+    var tab by remember { mutableStateOf(0) }
     var error by remember { mutableStateOf("") }
+
+    val green = Color(0xFF0F9F6E)
+    val navy = Color(0xFF111B4D)
+    val bg = Color(0xFFF7F9FC)
+    val muted = Color(0xFF68738A)
+    val red = Color(0xFFDC3030)
+    val blue = Color(0xFF1877E8)
 
     fun load() {
         scope.launch {
-            try {
-                loans = JSONArray(call(context, "/api/loans/")).toObjects()
-                accounts = JSONArray(call(context, "/api/accounts/")).toObjects()
-                categories = JSONArray(call(context, "/api/categories/")).toObjects()
-                selected?.let { loan ->
-                    installments = JSONArray(
-                        call(context, "/api/installments/?loan=" + loan.optInt("id"))
-                    ).toObjects()
-                }
-            } catch (e: Exception) {
-                error = e.message ?: "خطا"
-            }
+            try { loans = JSONArray(call(context, "/api/loans/")).toObjects() }
+            catch (e: Exception) { error = e.message ?: "خطا" }
         }
     }
-
+    fun loadInstallments(loan: JSONObject) {
+        scope.launch {
+            try {
+                installments = JSONArray(call(context, "/api/installments/?loan=" + loan.optInt("id"))).toObjects()
+                selected = loan
+            } catch (e: Exception) { error = e.message ?: "خطا" }
+        }
+    }
     LaunchedEffect(Unit) { load() }
 
-    Column(modifier.fillMaxSize().padding(16.dp)) {
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                if (selected == null) "وام و اقساط" else selected!!.optString("title"),
-                style = MaterialTheme.typography.headlineSmall
-            )
-            if (selected == null) {
-                Button(onClick = { showNew = true }) { Text("وام جدید") }
-            } else {
-                TextButton(onClick = { selected = null }) { Text("بازگشت") }
-            }
-        }
-
-        if (error.isNotBlank()) {
-            Text(error, color = MaterialTheme.colorScheme.error)
-        }
-
-        if (selected == null) {
-            if (loans.isEmpty()) {
-                Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(20.dp)) {
-                        Text("هنوز وامی ثبت نشده", style = MaterialTheme.typography.titleMedium)
-                        Text("برای ساخت برنامه اقساط، روی «وام جدید» بزنید.")
-                    }
-                }
-            }
-
-            LazyColumn {
-                items(loans) { loan ->
-                    ListItem(
-                        headlineContent = { Text(loan.optString("title")) },
-                        supportingContent = {
-                            Text(
-                                "اصل: " + money(loan.opt("principal_amount")) +
-                                    " | هر قسط: " + money(loan.opt("installment_amount"))
-                            )
-                        },
-                        trailingContent = {
-                            TextButton(onClick = {
-                                selected = loan
-                                scope.launch {
-                                    try {
-                                        installments = JSONArray(
-                                            call(
-                                                context,
-                                                "/api/installments/?loan=" + loan.optInt("id")
-                                            )
-                                        ).toObjects()
-                                    } catch (e: Exception) {
-                                        error = e.message ?: "خطا"
-                                    }
-                                }
-                            }) {
-                                Text("اقساط")
-                            }
+    if (showNew) {
+        LoanCreateScreen(onBack = { showNew = false }, onSaved = { showNew = false; load() })
+        return
+    }
+    if (selected != null) {
+        LoanDetailScreen(loan = selected!!, installments = installments, onBack = { selected = null },
+            onPay = { inst ->
+                scope.launch {
+                    try {
+                        val accounts = JSONArray(call(context, "/api/accounts/")).toObjects()
+                        val categories = JSONArray(call(context, "/api/categories/")).toObjects()
+                        val aid = accounts.firstOrNull()?.optInt("id", 0) ?: 0
+                        val cid = categories.firstOrNull { it.optString("category_type") == "EXPENSE" }?.optInt("id", 0) ?: 0
+                        if (aid == 0 || cid == 0) error = "ابتدا یک حساب و دسته‌بندی هزینه داشته باشید"
+                        else {
+                            call(context, "/api/installments/" + inst.optInt("id") + "/pay/", "POST",
+                                JSONObject().put("amount", inst.opt("amount")).put("account_id", aid)
+                                    .put("category_id", cid).put("paid_date", todayApi()).toString())
+                            loadInstallments(selected!!)
                         }
-                    )
-                    HorizontalDivider()
+                    } catch (e: Exception) { error = e.message ?: "خطا" }
                 }
+            })
+        return
+    }
+
+    Column(modifier.fillMaxSize().background(bg)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Text("تعهدات", style = MaterialTheme.typography.headlineSmall, color = navy)
+            Button(onClick = { showNew = true }, colors = ButtonDefaults.buttonColors(containerColor = green),
+                shape = MaterialTheme.shapes.medium) { Text("+  افزودن تعهد جدید", color = Color.White) }
+        }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            listOf("همه", "وام و اقساط", "هزینه‌های ثابت").forEachIndexed { i, label ->
+                Button(onClick = { tab = i }, modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = if (tab == i) green else Color(0xFFF0F3F8),
+                        contentColor = if (tab == i) Color.White else navy), shape = MaterialTheme.shapes.medium) { Text(label) }
+            }
+        }
+        if (tab == 2) {
+            Card(Modifier.fillMaxWidth().padding(16.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF8E8))) {
+                Text("هزینه‌های ثابت در این بخش نمایش داده می‌شوند.", Modifier.padding(18.dp), color = navy)
             }
         } else {
-            if (installments.isEmpty()) {
-                Text("برای این وام هنوز قسطی وجود ندارد.")
+            val currentMonth = loans.sumOf { it.optLong("installment_amount") }
+            Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                CommitmentStat("کل باقیمانده", money(loans.sumOf { it.optLong("principal_amount") }), "▣", Color(0xFFF2E8FF), Color(0xFF6A21D8), Modifier.weight(1f))
+                CommitmentStat("ماه آینده", money(currentMonth), "▤", Color(0xFFE9FAF3), green, Modifier.weight(1f))
+                CommitmentStat("این ماه", money(currentMonth), "□", Color(0xFFFFF1DD), Color(0xFFED9411), Modifier.weight(1f))
+                CommitmentStat("معوقه", money(0L), "◷", Color(0xFFEAF3FF), blue, Modifier.weight(1f))
             }
-
-            LazyColumn {
-                items(installments) { inst ->
-                    val paid = inst.optString("status") == "PAID"
-                    ListItem(
-                        headlineContent = {
-                            Text("قسط " + inst.optInt("installment_number"))
-                        },
-                        supportingContent = {
-                            Text(
-                                "سررسید: " + apiToJalali(inst.optString("due_date")) +
-                                    " | " + inst.optString("status")
-                            )
-                        },
-                        trailingContent = {
-                            Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
-                                Text(money(inst.opt("amount")))
-                                if (!paid) {
-                                    TextButton(onClick = {
-                                        scope.launch {
-                                            try {
-                                                val aid = accounts.firstOrNull()?.optInt("id", 0) ?: 0
-                                                val cid = categories.firstOrNull {
-                                                    it.optString("category_type") == "EXPENSE"
-                                                }?.optInt("id", 0) ?: 0
-                                                if (aid == 0 || cid == 0) {
-                                                    error = "ابتدا یک حساب و دسته‌بندی هزینه داشته باشید"
-                                                } else {
-                                                    call(
-                                                        context,
-                                                        "/api/installments/" + inst.optInt("id") + "/pay/",
-                                                        "POST",
-                                                        JSONObject()
-                                                            .put("amount", inst.opt("amount"))
-                                                            .put("account_id", aid)
-                                                            .put("category_id", cid)
-                                                            .put("paid_date", todayApi())
-                                                            .toString()
-                                                    )
-                                                    load()
-                                                }
-                                            } catch (e: Exception) {
-                                                error = e.message ?: "خطا"
-                                            }
-                                        }
-                                    }) {
-                                        Text("پرداخت")
-                                    }
-                                }
-                            }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Text("تعهدات نزدیک", style = MaterialTheme.typography.titleLarge, color = navy)
+                TextButton(onClick = {}) { Text("مشاهده همه  ‹", color = blue) }
+            }
+            LazyColumn(contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(loans.take(3)) { loan -> CommitmentRow(loan, 12, { loadInstallments(loan) }, true) }
+                item { Text("تعهدات فعال", style = MaterialTheme.typography.titleLarge, color = navy, modifier = Modifier.padding(top = 10.dp, bottom = 4.dp)) }
+                items(loans) { loan -> CommitmentRow(loan, 12, { loadInstallments(loan) }, false) }
+                if (loans.isEmpty()) item {
+                    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                        Column(Modifier.padding(22.dp), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                            Text("هنوز تعهدی ثبت نشده", color = navy, style = MaterialTheme.typography.titleMedium)
+                            Spacer(Modifier.height(8.dp))
+                            Button(onClick = { showNew = true }, colors = ButtonDefaults.buttonColors(containerColor = green)) { Text("افزودن تعهد", color = Color.White) }
                         }
-                    )
-                    HorizontalDivider()
+                    }
+                }
+                if (error.isNotBlank()) item { Text(error, color = red) }
+            }
+        }
+    }
+}
+
+@Composable private fun CommitmentStat(title: String, value: String, icon: String, bg: Color, accent: Color, modifier: Modifier) {
+    Card(modifier, colors = CardDefaults.cardColors(containerColor = bg), shape = MaterialTheme.shapes.large) {
+        Column(Modifier.padding(10.dp)) {
+            Text(icon, color = accent, style = MaterialTheme.typography.titleLarge)
+            Text(title, color = Color(0xFF26304F), style = MaterialTheme.typography.labelSmall)
+            Text(value, color = accent, style = MaterialTheme.typography.titleMedium)
+            Text("ریال", color = accent, style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+@Composable private fun CommitmentRow(loan: JSONObject, days: Int, onClick: () -> Unit, compact: Boolean) {
+    val green = Color(0xFF0F9F6E); val navy = Color(0xFF111B4D)
+    Card(Modifier.fillMaxWidth().clickable(onClick = onClick), colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE7EAF0)), shape = MaterialTheme.shapes.large) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = if (compact) 11.dp else 14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Text("›", color = navy, style = MaterialTheme.typography.headlineSmall)
+            Surface(shape = MaterialTheme.shapes.extraLarge, color = Color(0xFFE9F6FF)) { Text("▣", modifier = Modifier.padding(10.dp), color = Color(0xFF1877E8)) }
+            Column(Modifier.weight(1f).padding(horizontal = 12.dp), horizontalAlignment = androidx.compose.ui.Alignment.End) {
+                Text(loan.optString("title").ifBlank { "تعهد" }, color = navy, style = MaterialTheme.typography.titleMedium)
+                Text("وام و اقساط", color = Color(0xFF7A8499), style = MaterialTheme.typography.bodySmall)
+            }
+            Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
+                Text(money(loan.opt("installment_amount")), color = navy, style = MaterialTheme.typography.titleMedium)
+                Text("ریال", color = Color(0xFF7A8499), style = MaterialTheme.typography.bodySmall)
+            }
+            Surface(shape = MaterialTheme.shapes.medium, color = if (days <= 3) Color(0xFFFFE8E8) else Color(0xFFE9F8F0)) {
+                Text(fa(days.toString()) + " روز مانده", Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                    color = if (days <= 3) Color(0xFFC82A2A) else green, style = MaterialTheme.typography.labelSmall)
+            }
+        }
+    }
+}
+
+@Composable private fun LoanDetailScreen(loan: JSONObject, installments: List<JSONObject>, onBack: () -> Unit, onPay: (JSONObject) -> Unit) {
+    val navy = Color(0xFF111B4D); val green = Color(0xFF0F9F6E); val red = Color(0xFFDC3030); val blue = Color(0xFF1877E8)
+    val principal = loan.optLong("principal_amount")
+    val paid = installments.filter { it.optString("status") == "PAID" }.sumOf { it.optLong("amount") }
+    val total = loan.optLong("installment_amount") * loan.optInt("total_installments")
+    val remaining = (total - paid).coerceAtLeast(0)
+    val count = loan.optInt("total_installments"); val paidCount = installments.count { it.optString("status") == "PAID" }
+    val progress = if (count > 0) paidCount.toFloat() / count else 0f
+    Column(Modifier.fillMaxSize().background(Color(0xFFF7F9FC))) {
+        Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Text("‹", color = navy, style = MaterialTheme.typography.headlineMedium, modifier = Modifier.clickable(onClick = onBack))
+            Text("جزئیات تعهد", color = navy, style = MaterialTheme.typography.headlineSmall)
+            Text("⋮", color = navy, style = MaterialTheme.typography.headlineMedium)
+        }
+        LazyColumn(contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            item {
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE6E9EF))) {
+                    Column(Modifier.padding(18.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Column(Modifier.weight(1f)) {
+                                Text(loan.optString("title"), color = navy, style = MaterialTheme.typography.headlineSmall)
+                                Text("وام و بدهی", color = Color(0xFF68738A))
+                                Surface(shape = MaterialTheme.shapes.medium, color = Color(0xFFE9F8F0)) { Text("●  در حال پرداخت", Modifier.padding(horizontal = 10.dp, vertical = 5.dp), color = green) }
+                            }
+                            Surface(shape = MaterialTheme.shapes.extraLarge, color = Color(0xFFE9F8F0)) { Text("▤", Modifier.padding(18.dp), color = green) }
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("شروع: " + apiToJalali(loan.optString("start_date")), color = Color(0xFF68738A))
+                            Text("پایان: " + apiToJalali(loan.optString("end_date")), color = Color(0xFF68738A))
+                        }
+                        Spacer(Modifier.height(14.dp))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                            DetailValue("مبلغ اصلی", money(principal), "ریال")
+                            DetailValue("نرخ سود سالانه", fa(loan.optString("interest_rate").ifBlank { "0" }) + "%", "")
+                            DetailValue("تعداد اقساط", fa(count.toString()), "قسط")
+                            DetailValue("مبلغ هر قسط", money(loan.opt("installment_amount")), "ریال")
+                        }
+                    }
+                }
+            }
+            item {
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Column(Modifier.padding(16.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(fa(paidCount.toString()) + " از " + fa(count.toString()) + " قسط پرداخت شده", color = navy)
+                            Text(fa((progress * 100).toInt().toString()) + "%", color = navy, style = MaterialTheme.typography.titleMedium)
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth(), color = green, trackColor = Color(0xFFE5E9F0))
+                    }
+                }
+            }
+            item {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DetailBox("مبلغ کل پرداختی", money(paid), "ریال", Color(0xFFFFEEF0), red)
+                    DetailBox("مانده کل", money(remaining), "ریال", Color(0xFFEAF3FF), blue)
+                    DetailBox("مانده اصل", money((principal - paid.coerceAtMost(principal)).coerceAtLeast(0)), "ریال", Color(0xFFE9F8F0), green)
+                }
+            }
+            item {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    TextButton(onClick = {}) { Text("اقساط", color = green) }
+                    TextButton(onClick = {}) { Text("اطلاعات", color = navy) }
+                    TextButton(onClick = {}) { Text("نمودار", color = navy) }
+                    TextButton(onClick = {}) { Text("ویرایش", color = navy) }
+                }
+            }
+            item { Text("لیست اقساط", color = navy, style = MaterialTheme.typography.titleLarge) }
+            items(installments) { inst ->
+                val paidStatus = inst.optString("status") == "PAID"
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = if (!paidStatus) Color(0xFFF0F6FF) else Color.White)) {
+                    Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        Text("⋮", color = navy)
+                        Column(Modifier.weight(1f), horizontalAlignment = androidx.compose.ui.Alignment.End) {
+                            Text("قسط " + fa(inst.optInt("installment_number").toString()), color = navy)
+                            Text(apiToJalali(inst.optString("due_date")), color = Color(0xFF68738A), style = MaterialTheme.typography.bodySmall)
+                        }
+                        Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
+                            Text(money(inst.opt("amount")), color = navy)
+                            Text("ریال", color = Color(0xFF68738A), style = MaterialTheme.typography.bodySmall)
+                        }
+                        Surface(shape = MaterialTheme.shapes.medium, color = if (paidStatus) Color(0xFFE9F8F0) else Color(0xFFEAF3FF)) {
+                            Text(if (paidStatus) "✓ پرداخت شده" else "در انتظار پرداخت", Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                color = if (paidStatus) green else blue, style = MaterialTheme.typography.labelSmall)
+                        }
+                        if (!paidStatus) {
+                            Spacer(Modifier.width(4.dp))
+                            Button(onClick = { onPay(inst) }, colors = ButtonDefaults.buttonColors(containerColor = green)) { Text("پرداخت", color = Color.White) }
+                        }
+                    }
                 }
             }
         }
     }
+}
 
-    if (showNew) {
-        LoanDialog(
-            onClose = { showNew = false },
-            onSaved = {
-                showNew = false
-                load()
-            }
-        )
+@Composable private fun DetailValue(title: String, value: String, unit: String) {
+    Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally, modifier = Modifier.width(82.dp)) {
+        Text(title, color = Color(0xFF68738A), style = MaterialTheme.typography.labelSmall)
+        Text(value, color = Color(0xFF0F9F6E), style = MaterialTheme.typography.titleMedium)
+        if (unit.isNotBlank()) Text(unit, color = Color(0xFF68738A), style = MaterialTheme.typography.labelSmall)
+    }
+}
+@Composable private fun DetailBox(title: String, value: String, unit: String, bg: Color, accent: Color) {
+    Card(Modifier.weight(1f), colors = CardDefaults.cardColors(containerColor = bg)) {
+        Column(Modifier.padding(10.dp)) { Text(title, color = Color(0xFF68738A), style = MaterialTheme.typography.labelSmall); Text(value, color = accent, style = MaterialTheme.typography.titleMedium); Text(unit, color = accent, style = MaterialTheme.typography.labelSmall) }
     }
 }
 
-@Composable
-fun LoanDialog(onClose:()->Unit,onSaved:()->Unit){
-    val context=LocalContext.current
-    val scope=rememberCoroutineScope()
-    var showDate by remember{mutableStateOf(false)}
-    var title by remember{mutableStateOf("")}
-    var principal by remember{mutableStateOf("")}
-    var interest by remember{mutableStateOf("")}
-    var installment by remember{mutableStateOf("")}
-    var count by remember{mutableStateOf("")}
-    var start by remember{mutableStateOf(todayJalali())}
-    var historyMode by remember{mutableStateOf("ALL_PAID")}
-    var overdueCount by remember{mutableStateOf("")}
-    var error by remember{mutableStateOf("")}
-
-    val p = parseMoney(principal)
-    val i = parseMoney(interest)
-    val inst = parseMoney(installment)
-    val n = count.toIntOrNull() ?: 0
-
-    // Exactly two of interest / installment / count determine the third.
+@Composable private fun LoanCreateScreen(onBack: () -> Unit, onSaved: () -> Unit) {
+    val context = LocalContext.current; val scope = rememberCoroutineScope()
+    var title by remember { mutableStateOf("") }; var principal by remember { mutableStateOf("") }; var interest by remember { mutableStateOf("") }
+    var installment by remember { mutableStateOf("") }; var count by remember { mutableStateOf("") }; var start by remember { mutableStateOf(todayJalali()) }
+    var showDate by remember { mutableStateOf(false) }; var error by remember { mutableStateOf("") }; var saving by remember { mutableStateOf(false) }
+    val p = parseMoney(principal); val i = parseMoney(interest); val inst = parseMoney(installment); val n = count.toIntOrNull() ?: 0
     val calculatedInterest = if (interest.isBlank() && inst > 0 && n > 0) (inst * n - p).coerceAtLeast(0) else null
-    val calculatedInstallment = if (installment.isBlank() && i >= 0 && n > 0 && p > 0) ((p + i + n - 1) / n) else null
-    val calculatedCount = if (count.isBlank() && i >= 0 && inst > 0 && p > 0) ((p + i + inst - 1) / inst).toInt() else null
-
-    AlertDialog(
-        onDismissRequest=onClose,
-        title={Text("وام جدید")},
-        text={
-            Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
-                TextField(title,{title=it},label={Text("عنوان")},modifier=Modifier.fillMaxWidth())
-                AmountField("اصل مبلغ وام",principal){principal=it}
-                AmountField("سود کل وام (اختیاری)",interest){interest=it}
-                AmountField("مبلغ هر قسط (اختیاری)",installment){installment=it}
-                OutlinedTextField(
-                    count,
-                    {count=it.filter(Char::isDigit)},
-                    label={Text("تعداد اقساط (اختیاری)")},
-                    keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),
-                    modifier=Modifier.fillMaxWidth()
-                )
-
-                if (calculatedInterest != null) {
-                    Text("سود محاسبه‌شده: " + money(calculatedInterest))
+    val calculatedInstallment = if (installment.isBlank() && n > 0 && p > 0) ((p + i + n - 1) / n) else null
+    val finalInterest = if (interest.isBlank()) calculatedInterest ?: 0L else i
+    val finalInstallment = if (installment.isBlank()) calculatedInstallment ?: 0L else inst
+    val totalRepayment = p + finalInterest
+    Column(Modifier.fillMaxSize().background(Color(0xFFF7F9FC))) {
+        Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Text("‹", color = Color(0xFF111B4D), style = MaterialTheme.typography.headlineMedium, modifier = Modifier.clickable(onClick = onBack))
+            Text("افزودن تعهد", color = Color(0xFF111B4D), style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.width(40.dp))
+        }
+        LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            item {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Card(Modifier.weight(1f), colors = CardDefaults.cardColors(containerColor = Color(0xFFE9F8F0))) { Column(Modifier.padding(16.dp)) { Text("●", color = Color(0xFF0F9F6E)); Text("وام / بدهی", color = Color(0xFF111B4D)); Text("با اقساط و سود", color = Color(0xFF68738A)) } }
+                    Card(Modifier.weight(1f), colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF2E2))) { Column(Modifier.padding(16.dp)) { Text("▣", color = Color(0xFFED9411)); Text("هزینه ثابت", color = Color(0xFF111B4D)); Text("مصارف ماهانه و دوره‌ای", color = Color(0xFF68738A)) } }
                 }
-                if (calculatedInstallment != null) {
-                    Text("قسط محاسبه‌شده: " + money(calculatedInstallment))
-                }
-                if (calculatedCount != null) {
-                    Text("تعداد اقساط محاسبه‌شده: " + fa(calculatedCount.toString()))
-                }
-
-                val finalInterest = if (interest.isBlank()) calculatedInterest ?: 0L else i
-                val finalInstallment = if (installment.isBlank()) calculatedInstallment ?: 0L else inst
-                val finalCount = if (count.isBlank()) calculatedCount ?: 0 else n
-                val totalRepayment = p + finalInterest
-                if (p > 0 && finalInterest >= 0) {
-                    Text("مجموع بازپرداخت: " + money(totalRepayment))
-                }
-                if (finalCount > 0 && finalInstallment > 0) {
-                    val last = totalRepayment - finalInstallment * (finalCount - 1)
-                    Text("قسط آخر: " + money(last))
-                }
-
-                OutlinedButton(onClick={showDate=true},modifier=Modifier.fillMaxWidth()){
-                    Text("شروع: "+start)
-                }
-
-                SimpleChoice(
-                    "وضعیت اقساط گذشته",
-                    listOf(
-                        "ALL_PAID" to "اقساط گذشته پرداخت شده",
-                        "OVERDUE_COUNT" to "تعدادی از اقساط گذشته باقی مانده"
-                    ),
-                    historyMode
-                ) { historyMode = it }
-
-                if(historyMode=="OVERDUE_COUNT"){
-                    OutlinedTextField(
-                        overdueCount,
-                        {overdueCount=it.filter(Char::isDigit)},
-                        label={Text("تعداد اقساط عقب‌افتاده")},
-                        keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),
-                        modifier=Modifier.fillMaxWidth()
-                    )
-                }
-
-                if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
             }
-        },
-        confirmButton={
-            Button(onClick={
-                scope.launch{
-                    try{
-                        val finalInterest = if (interest.isBlank()) calculatedInterest ?: 0L else i
-                        val finalInstallment = if (installment.isBlank()) calculatedInstallment ?: 0L else inst
-                        val finalCount = if (count.isBlank()) calculatedCount ?: 0 else n
-                        val overdue = overdueCount.toIntOrNull() ?: 0
-
-                        if(title.trim().isBlank() || p<=0){
-                            error="عنوان و اصل مبلغ وام را وارد کنید"
-                        } else if(
-                            finalInterest < 0 || finalInstallment <= 0 || finalCount < 1 ||
-                            (interest.isBlank() && calculatedInterest == null) ||
-                            (installment.isBlank() && calculatedInstallment == null) ||
-                            (count.isBlank() && calculatedCount == null)
-                        ){
-                            error="حداقل دو مورد از سود، مبلغ قسط و تعداد اقساط را وارد کنید"
-                        } else if(historyMode=="OVERDUE_COUNT" && overdue > finalCount){
-                            error="تعداد اقساط عقب‌افتاده نمی‌تواند بیشتر از کل اقساط باشد"
-                        } else {
-                            val body=JSONObject()
-                                .put("title",title.trim())
-                                .put("loan_type","LOAN")
-                                .put("principal_amount",p)
-                                .put("interest_amount",finalInterest)
-                                .put("installment_amount",finalInstallment)
-                                .put("total_installments",finalCount)
-                                .put("start_date",jalaliToApi(start))
-                                .put("is_active",true)
-                                .put("history_mode",historyMode)
-                                .put("overdue_count",if(historyMode=="OVERDUE_COUNT") overdue else 0)
-
-                            call(context,"/api/loans/","POST",body.toString())
-                            onClose()
-                            onSaved()
-                        }
-                    }catch(e:Exception){
-                        error=e.message?:"خطا"
+            item { OutlinedTextField(title, { title = it }, label = { Text("عنوان تعهد") }, placeholder = { Text("مثلاً وام خودرو، وام بانک، اجاره و ...") }, modifier = Modifier.fillMaxWidth()) }
+            item { AmountField("مبلغ اصلی (ریال)", principal) { principal = it } }
+            item {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AmountField("سود کل", interest, Modifier.weight(1f)) { interest = it }
+                    OutlinedTextField(count, { count = it.filter(Char::isDigit) }, label = { Text("تعداد اقساط") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f))
+                }
+            }
+            item {
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFFE9F8F0))) {
+                    Column(Modifier.padding(14.dp)) {
+                        Text("مبلغ هر قسط (ریال)", color = Color(0xFF111B4D))
+                        AmountField("", installment) { installment = it }
+                        Text("مبلغ قسط بر اساس مبلغ اصلی، سود و تعداد اقساط به صورت خودکار محاسبه می‌شود.", color = Color(0xFF68738A), style = MaterialTheme.typography.bodySmall)
                     }
                 }
-            }){Text("ثبت")}
-        },
-        dismissButton={TextButton(onClick=onClose){Text("انصراف")}}
-    )
+            }
+            item {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { showDate = true }, modifier = Modifier.weight(1f)) { Text("تاریخ شروع\n" + start) }
+                    OutlinedButton(onClick = { }, modifier = Modifier.weight(1f)) { Text("روز سررسید هر ماه\n۵") }
+                }
+            }
+            item {
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFFEFF4FF))) {
+                    Column(Modifier.padding(14.dp)) {
+                        Text("خلاصه تعهد", color = Color(0xFF111B4D), style = MaterialTheme.typography.titleMedium)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            DetailValue("مبلغ اصلی", money(p), "ریال"); DetailValue("سود کل", money(finalInterest), "ریال"); DetailValue("مبلغ هر قسط", money(finalInstallment), "ریال"); DetailValue("مبلغ کل پرداختی", money(totalRepayment), "ریال")
+                        }
+                    }
+                }
+            }
+            if (error.isNotBlank()) item { Text(error, color = Color(0xFFDC3030)) }
+            item {
+                Button(enabled = !saving, onClick = {
+                    scope.launch {
+                        try {
+                            if (title.trim().isBlank() || p <= 0 || finalInstallment <= 0 || n <= 0) error = "عنوان، مبلغ اصلی، مبلغ قسط و تعداد اقساط را کامل کنید"
+                            else {
+                                saving = true
+                                val body = JSONObject().put("title", title.trim()).put("loan_type", "LOAN").put("principal_amount", p)
+                                    .put("interest_amount", finalInterest).put("installment_amount", finalInstallment).put("total_installments", n)
+                                    .put("start_date", jalaliToApi(start)).put("is_active", true).put("history_mode", "ALL_PAID").put("overdue_count", 0)
+                                call(context, "/api/loans/", "POST", body.toString()); onSaved()
+                            }
+                        } catch (e: Exception) { error = e.message ?: "خطا" }
+                        saving = false
+                    }
+                }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F9F6E)),
+                    shape = MaterialTheme.shapes.large) { Text(if (saving) "در حال ثبت..." else "ثبت تعهد", color = Color.White, modifier = Modifier.padding(vertical = 4.dp)) }
+            }
+        }
+    }
     if (showDate) JalaliDateDialog(start) { start = it; showDate = false }
 }
-
 
 @Composable
 private fun PasswordResetDialog(context: Context, onClose: () -> Unit) {
