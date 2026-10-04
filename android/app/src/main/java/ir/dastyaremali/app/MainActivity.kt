@@ -3,8 +3,8 @@ package ir.dastyaremali.app
 import android.app.DatePickerDialog
 import android.os.Bundle
 import android.Manifest
-import android.content.Context
 import android.content.pm.PackageManager
+import android.content.Context
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
@@ -18,8 +18,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
@@ -39,8 +37,7 @@ private const val PREF = "dastyar_auth"
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (android.os.Build.VERSION.SDK_INT >= 23 &&
-            checkSelfPermission(Manifest.permission.RECEIVE_SMS) != PackageManager.PERMISSION_GRANTED) {
+        if (android.os.Build.VERSION.SDK_INT >= 23 && checkSelfPermission(Manifest.permission.RECEIVE_SMS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.RECEIVE_SMS), 1001)
         }
         setContent { DastyarApp() }
@@ -139,17 +136,15 @@ private fun jalaliToApi(s:String): String {
     val g=jalaliToGregorian(p[0],p[1],p[2]); return "%04d-%02d-%02d".format(g.first,g.second,g.third)
 }
 private fun todayApi(): String { val c=Calendar.getInstance(); return "%04d-%02d-%02d".format(c.get(Calendar.YEAR),c.get(Calendar.MONTH)+1,c.get(Calendar.DAY_OF_MONTH)) }
-private fun timestampToJalali(timestamp: Long): String {
-    val c = Calendar.getInstance().apply { timeInMillis = timestamp }
-    val j = gregorianToJalali(c.get(Calendar.YEAR), c.get(Calendar.MONTH) + 1, c.get(Calendar.DAY_OF_MONTH))
-    return "%04d/%02d/%02d".format(j.first, j.second, j.third)
-}
+
 private fun pendingSms(context: Context): JSONObject? = try {
     context.getSharedPreferences("dastyar_sms", 0).getString("pending", null)?.let { JSONObject(it) }
 } catch (_: Exception) { null }
+
 private fun clearPendingSms(context: Context) {
     context.getSharedPreferences("dastyar_sms", 0).edit().remove("pending").apply()
 }
+
 private fun apiToJalali(s:String): String { val p=s.split("-").mapNotNull{it.toIntOrNull()}; if(p.size!=3)return s; val j=gregorianToJalali(p[0],p[1],p[2]); return "%04d/%02d/%02d".format(j.first,j.second,j.third) }
 private fun JSONArray.toObjects(): List<JSONObject> = List(length()) { getJSONObject(it) }
 
@@ -157,17 +152,10 @@ private fun JSONArray.toObjects(): List<JSONObject> = List(length()) { getJSONOb
 fun DastyarApp() {
     val context = LocalContext.current
     var logged by remember { mutableStateOf(context.token() != null) }
-
     CompositionLocalProvider(androidx.compose.ui.platform.LocalLayoutDirection provides LayoutDirection.Rtl) {
         MaterialTheme(colorScheme = lightColorScheme(primary = Color(0xFF0F766E))) {
-            if (logged) {
-                AppShell {
-                    context.logout()
-                    logged = false
-                }
-            } else {
-                LoginScreen { logged = true }
-            }
+            if (logged) AppShell { context.logout(); logged = false }
+            else LoginScreen { logged = true }
         }
     }
 }
@@ -178,9 +166,6 @@ fun LoginScreen(done: () -> Unit) {
     val scope = rememberCoroutineScope()
     var user by remember { mutableStateOf("") }
     var pass by remember { mutableStateOf("") }
-    var mobile by remember { mutableStateOf("") }
-    var showPassword by remember { mutableStateOf(false) }
-    var showReset by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf("") }
     var register by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
@@ -191,41 +176,15 @@ fun LoginScreen(done: () -> Unit) {
         Spacer(Modifier.height(20.dp))
         if (register) TextField(name, { name = it }, label = { Text("نام") }, modifier = Modifier.fillMaxWidth())
         TextField(user, { user = it }, label = { Text("نام کاربری") }, modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp))
-        OutlinedTextField(
-            value = pass,
-            onValueChange = { pass = it },
-            label = { Text("گذرواژه") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-            trailingIcon = {
-                TextButton(onClick = { showPassword = !showPassword }) {
-                    Text(if (showPassword) "مخفی" else "نمایش")
-                }
-            },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
-        )
-        if (register) {
-            OutlinedTextField(
-                value = mobile,
-                onValueChange = { mobile = it.filter(Char::isDigit).take(11) },
-                label = { Text("شماره موبایل") },
-                modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
-            )
-        }
+        OutlinedTextField(pass, { pass = it }, label = { Text("گذرواژه") }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
         if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
         Spacer(Modifier.height(10.dp))
         Button(enabled = !busy, onClick = {
             scope.launch {
                 busy = true; error = ""
                 try {
-                    if (register) {
-                        if (mobile.length != 11 || !mobile.startsWith("09")) throw IllegalStateException("شماره موبایل معتبر وارد کنید.")
-                        call(context, "/api/auth/register/", "POST",
-                            JSONObject().put("username", user.trim()).put("password", pass).put("first_name", name.trim()).put("mobile", mobile).toString())
-                    }
+                    if (register) call(context, "/api/auth/register/", "POST",
+                        JSONObject().put("username", user.trim()).put("password", pass).put("first_name", name.trim()).toString())
                     val r = JSONObject(call(context, "/api/auth/token/", "POST",
                         JSONObject().put("username", user.trim()).put("password", pass).toString()))
                     context.saveTokens(r.getString("access"), r.optString("refresh").ifBlank { null }); done()
@@ -233,13 +192,9 @@ fun LoginScreen(done: () -> Unit) {
                 busy = false
             }
         }, modifier = Modifier.fillMaxWidth()) { Text(if (busy) "در حال انجام..." else if (register) "ساخت حساب" else "ورود") }
-        if (!register) {
-            TextButton(onClick = { showReset = true }, modifier = Modifier.fillMaxWidth()) { Text("بازیابی رمز عبور") }
-        }
-        TextButton(onClick = { register = !register; error = ""; showReset = false }, modifier = Modifier.fillMaxWidth()) {
+        TextButton(onClick = { register = !register; error = "" }, modifier = Modifier.fillMaxWidth()) {
             Text(if (register) "ورود به حساب" else "ساخت حساب جدید")
         }
-        if (showReset) PasswordResetDialog(context, onClose = { showReset = false })
     }
 }
 
@@ -251,9 +206,10 @@ fun AppShell(onLogout: () -> Unit) {
         NavigationBar {
             listOf(
                 "خانه" to "⌂",
-                "تراکنش" to "↕",
-                "اقساط" to "▣",
-                "حساب" to "●"
+                "تراکنش‌ها" to "↕",
+                "تعهدات" to "▣",
+                "اشتراک" to "♛",
+                "تنظیمات" to "⚙"
             ).forEachIndexed { i, item ->
                 NavigationBarItem(
                     selected = page == i,
@@ -267,7 +223,8 @@ fun AppShell(onLogout: () -> Unit) {
         when (page) {
             1 -> Transactions(Modifier.padding(p), quickTransactionType, { quickTransactionType = null })
             2 -> Loans(Modifier.padding(p))
-            3 -> Accounts(Modifier.padding(p))
+            3 -> SubscriptionScreen(Modifier.padding(p))
+            4 -> SettingsScreen(Modifier.padding(p), onLogout)
             else -> Home(Modifier.padding(p), onLogout) { type ->
                 quickTransactionType = type
                 page = 1
@@ -277,12 +234,118 @@ fun AppShell(onLogout: () -> Unit) {
 }
 
 @Composable
+fun SubscriptionScreen(modifier: Modifier) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var plans by remember { mutableStateOf(listOf<JSONObject>()) }
+    var active by remember { mutableStateOf<JSONObject?>(null) }
+    var error by remember { mutableStateOf("") }
+    var busyPlan by remember { mutableStateOf<Int?>(null) }
+
+    LaunchedEffect(Unit) {
+        try {
+            val p = JSONObject(call(context, "/api/subscription/plans/"))
+            plans = p.optJSONArray("plans")?.toObjects() ?: emptyList()
+            val me = JSONObject(call(context, "/api/subscription/me/"))
+            if (me.optBoolean("active")) active = me.optJSONObject("subscription")
+        } catch (e: Exception) { error = e.message ?: "خطا در دریافت اشتراک" }
+    }
+
+    LazyColumn(
+        modifier = modifier.fillMaxSize().background(Color(0xFFF5F8F7)),
+        contentPadding = PaddingValues(16.dp, 18.dp, 16.dp, 28.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item {
+            Text("اشتراک", style = MaterialTheme.typography.headlineSmall, color = Color(0xFF17211F))
+            Text("پلن مناسب خودت را انتخاب کن.", color = Color(0xFF71807B))
+        }
+        active?.let { s ->
+            item {
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F7F3))) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("اشتراک فعال", style = MaterialTheme.typography.titleMedium)
+                        Text(s.optJSONObject("plan")?.optString("name").orEmpty())
+                        Text("تا " + apiToJalali(s.optString("expires_at").take(10)))
+                    }
+                }
+            }
+        }
+        items(plans) { plan ->
+            val id = plan.optInt("id")
+            val price = plan.optLong("price")
+            val name = plan.optString("name")
+            val free = price <= 0
+            Card(
+                Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.large,
+                colors = CardDefaults.cardColors(containerColor = if (name.contains("حرفه")) Color(0xFFE8F7F3) else Color.White),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE1E9E6))
+            ) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(name, style = MaterialTheme.typography.titleLarge)
+                        if (name.contains("حرفه")) Text("♛", color = Color(0xFF0F766E), style = MaterialTheme.typography.titleLarge)
+                    }
+                    Text(plan.optString("description").ifBlank { "دسترسی به امکانات دستیار مالی" }, color = Color(0xFF71807B))
+                    Text(if (free) "رایگان" else NumberFormat.getNumberInstance(Locale("fa","IR")).format(price) + " ریال / یک ماه",
+                        style = MaterialTheme.typography.titleMedium, color = Color(0xFF0F766E))
+                    if (!free) {
+                        Button(
+                            enabled = busyPlan == null,
+                            onClick = {
+                                scope.launch {
+                                    busyPlan = id; error = ""
+                                    try {
+                                        call(context, "/api/subscription/purchase/", "POST", JSONObject().put("plan_id", id).toString())
+                                        error = "درخواست خرید ثبت شد. پس از تأیید، اشتراک فعال می‌شود."
+                                    } catch (e: Exception) { error = e.message ?: "خطا در ثبت درخواست" }
+                                    busyPlan = null
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text(if (busyPlan == id) "در حال ثبت..." else "انتخاب پلن") }
+                    }
+                }
+            }
+        }
+        if (error.isNotBlank()) item { Text(error, color = Color(0xFF0F766E)) }
+    }
+}
+
+@Composable
+fun SettingsScreen(modifier: Modifier, onLogout: () -> Unit) {
+    Column(
+        modifier.fillMaxSize().background(Color(0xFFF5F8F7)).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Text("تنظیمات", style = MaterialTheme.typography.headlineSmall)
+        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("حساب و اطلاعات مالی", style = MaterialTheme.typography.titleMedium)
+                Text("مدیریت حساب‌های بانکی و اطلاعات پایه در بخش زیر انجام می‌شود.", color = Color(0xFF71807B))
+                OutlinedButton(onClick = { }, modifier = Modifier.fillMaxWidth()) { Text("مدیریت حساب‌ها") }
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        OutlinedButton(onClick = onLogout, modifier = Modifier.fillMaxWidth()) { Text("خروج از حساب") }
+        Text("دستیار مالی • نسخه دوم", modifier = Modifier.fillMaxWidth(), color = Color(0xFF71807B))
+    }
+}
+
+@Composable
 fun Home(modifier: Modifier, logout: () -> Unit, openTransaction: (String) -> Unit) {
     val context = LocalContext.current
     var d by remember { mutableStateOf<JSONObject?>(null) }
     var error by remember { mutableStateOf("") }
-    var sms by remember { mutableStateOf<JSONObject?>(pendingSms(context)) }
-    var showSms by remember { mutableStateOf(false) }
+    var sms by remember { mutableStateOf<JSONObject?>(null) }
+    LaunchedEffect(Unit) {
+        sms = pendingSms(context)
+        while (true) {
+            kotlinx.coroutines.delay(1500)
+            sms = pendingSms(context)
+        }
+    }
     LaunchedEffect(Unit) {
         try { d = JSONObject(call(context, "/api/dashboard/")) }
         catch (e: Exception) { error = e.message ?: "خطا" }
@@ -299,18 +362,31 @@ fun Home(modifier: Modifier, logout: () -> Unit, openTransaction: (String) -> Un
     val danger = Color(0xFFDC2626)
     val warn = Color(0xFFB45309)
 
-    LaunchedEffect(Unit) {
-        while (true) {
-            kotlinx.coroutines.delay(1500)
-            sms = pendingSms(context)
-        }
-    }
-
     LazyColumn(
         modifier = modifier.fillMaxSize().background(bg),
         contentPadding = PaddingValues(13.dp, 18.dp, 13.dp, 24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        sms?.let { parsed ->
+            item {
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE1E9E6))) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("تراکنش از پیامک بانکی", style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.height(6.dp))
+                        Text(if (parsed.optString("type") == "INCOME") "واریز" else "برداشت")
+                        Text(money(parsed.opt("amount")), style = MaterialTheme.typography.titleLarge)
+                        parsed.optString("bank").takeIf { it.isNotBlank() }?.let { Text("بانک: $it") }
+                        parsed.optString("sender").takeIf { it.isNotBlank() }?.let { Text("فرستنده: $it") }
+                        Spacer(Modifier.height(10.dp))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { openTransaction(parsed.optString("type")); }) { Text("ثبت تراکنش") }
+                            OutlinedButton(onClick = { clearPendingSms(context); sms = null }) { Text("نادیده گرفتن") }
+                        }
+                    }
+                }
+            }
+        }
+
         item {
             Row(
                 Modifier.fillMaxWidth(),
@@ -322,30 +398,6 @@ fun Home(modifier: Modifier, logout: () -> Unit, openTransaction: (String) -> Un
                     Text("همه اعداد از موتور مالی Django می‌آیند.", style = MaterialTheme.typography.bodySmall, color = muted)
                 }
                 TextButton(onClick = logout) { Text("خروج", color = muted) }
-            }
-        }
-
-        sms?.let { parsed ->
-            item {
-                Card(
-                    Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.large,
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF0FDFA)),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFB7E4DC))
-                ) {
-                    Column(Modifier.padding(16.dp)) {
-                        Text("تراکنش جدید از پیامک", style = MaterialTheme.typography.titleMedium, color = text)
-                        Text(if (parsed.optString("type") == "INCOME") "واریز" else "برداشت", color = muted)
-                        Text(money(parsed.optLong("amount")), style = MaterialTheme.typography.titleLarge, color = text)
-                        parsed.optString("bank").takeIf { it.isNotBlank() }?.let { Text("بانک: $it", color = muted) }
-                        Text("تاریخ پیامک: " + timestampToJalali(parsed.optLong("receivedAt")), color = muted, style = MaterialTheme.typography.bodySmall)
-                        Spacer(Modifier.height(10.dp))
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = { showSms = true }, modifier = Modifier.weight(1f)) { Text("بررسی و ثبت") }
-                            OutlinedButton(onClick = { clearPendingSms(context); sms = null }, modifier = Modifier.weight(1f)) { Text("نادیده گرفتن") }
-                        }
-                    }
-                }
             }
         }
 
@@ -461,87 +513,6 @@ fun Home(modifier: Modifier, logout: () -> Unit, openTransaction: (String) -> Un
             }
         }
     }
-    if (showSms && sms != null) {
-        SmsTransactionDialog(
-            parsed = sms!!,
-            onClose = { showSms = false },
-            onSaved = { showSms = false; sms = pendingSms(context) }
-        )
-    }
-}
-
-@Composable
-fun SmsTransactionDialog(parsed: JSONObject, onClose: () -> Unit, onSaved: () -> Unit) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var type by remember { mutableStateOf(parsed.optString("type").ifBlank { "EXPENSE" }) }
-    var amount by remember { mutableStateOf(parsed.optLong("amount").toString()) }
-    var account by remember { mutableStateOf(0) }
-    var category by remember { mutableStateOf(0) }
-    var accounts by remember { mutableStateOf(listOf<JSONObject>()) }
-    var categories by remember { mutableStateOf(listOf<JSONObject>()) }
-    var date by remember { mutableStateOf(timestampToJalali(parsed.optLong("receivedAt"))) }
-    var description by remember { mutableStateOf("ثبت از پیامک بانکی") }
-    var error by remember { mutableStateOf("") }
-    var showDate by remember { mutableStateOf(false) }
-
-    LaunchedEffect(Unit) {
-        try {
-            accounts = JSONArray(call(context, "/api/accounts/")).toObjects()
-            categories = JSONArray(call(context, "/api/categories/")).toObjects()
-            account = accounts.firstOrNull()?.optInt("id", 0) ?: 0
-        } catch (e: Exception) {
-            error = e.message ?: "خطا در دریافت حساب‌ها و دسته‌بندی‌ها"
-        }
-    }
-
-    AlertDialog(
-        onDismissRequest = onClose,
-        title = { Text("تأیید تراکنش پیامکی") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("اطلاعات از پیامک بانکی استخراج شده؛ قبل از ثبت بررسی کنید.")
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = type == "EXPENSE", onClick = { type = "EXPENSE"; category = 0 }, label = { Text("هزینه") })
-                    FilterChip(selected = type == "INCOME", onClick = { type = "INCOME"; category = 0 }, label = { Text("درآمد") })
-                }
-                AmountField("مبلغ", amount) { amount = it }
-                SimpleSelector("حساب", accounts, account) { account = it }
-                SimpleSelector("دسته‌بندی", categories.filter { it.optString("category_type") == type }, category) { category = it }
-                TextField(description, { description = it }, label = { Text("توضیح") }, modifier = Modifier.fillMaxWidth())
-                OutlinedButton(onClick = { showDate = true }, modifier = Modifier.fillMaxWidth()) { Text("تاریخ: $date") }
-                if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
-            }
-        },
-        confirmButton = {
-            Button(onClick = {
-                scope.launch {
-                    try {
-                        val n = parseMoney(amount)
-                        if (n <= 0 || account == 0 || category == 0) {
-                            error = "مبلغ، حساب و دسته‌بندی را کامل کنید"
-                        } else {
-                            val body = JSONObject()
-                                .put("account", account)
-                                .put("category", category)
-                                .put("transaction_type", type)
-                                .put("amount", n)
-                                .put("date", jalaliToApi(date))
-                                .put("description", description.trim())
-                            call(context, "/api/transactions/", "POST", body.toString())
-                            clearPendingSms(context)
-                            onClose()
-                            onSaved()
-                        }
-                    } catch (e: Exception) {
-                        error = e.message ?: "خطا در ثبت تراکنش"
-                    }
-                }
-            }) { Text("تأیید و ثبت") }
-        },
-        dismissButton = { TextButton(onClick = onClose) { Text("انصراف") } }
-    )
-    if (showDate) JalaliDateDialog(date) { date = it; showDate = false }
 }
 
 @Composable
@@ -1079,37 +1050,4 @@ fun LoanDialog(onClose:()->Unit,onSaved:()->Unit){
         dismissButton={TextButton(onClick=onClose){Text("انصراف")}}
     )
     if (showDate) JalaliDateDialog(start) { start = it; showDate = false }
-}
-
-
-@Composable
-private fun PasswordResetDialog(context: Context, onClose: () -> Unit) {
-    val scope = rememberCoroutineScope()
-    var username by remember { mutableStateOf("") }
-    var message by remember { mutableStateOf("") }
-    var busy by remember { mutableStateOf(false) }
-    AlertDialog(
-        onDismissRequest = onClose,
-        title = { Text("بازیابی رمز عبور") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("نام کاربری را وارد کنید تا درخواست بازیابی برای مدیر ثبت شود.")
-                OutlinedTextField(username, { username = it }, label = { Text("نام کاربری") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                if (message.isNotBlank()) Text(message)
-            }
-        },
-        confirmButton = {
-            Button(enabled = !busy, onClick = {
-                scope.launch {
-                    busy = true
-                    message = ""
-                    try {
-                        message = JSONObject(call(context, "/api/auth/password-reset-request/", "POST", JSONObject().put("username", username.trim()).toString())).optString("detail", "درخواست ثبت شد.")
-                    } catch (e: Exception) { message = e.message ?: "خطا" }
-                    busy = false
-                }
-            }) { Text(if (busy) "در حال ارسال..." else "ثبت درخواست") }
-        },
-        dismissButton = { TextButton(onClick = onClose) { Text("بستن") } }
-    )
 }
