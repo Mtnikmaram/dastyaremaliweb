@@ -247,107 +247,152 @@ fun LoginScreen(done: () -> Unit) {
 fun AppShell(onLogout: () -> Unit) {
     var page by remember { mutableStateOf(0) }
     var quickTransactionType by remember { mutableStateOf<String?>(null) }
-    val navItems = listOf(
-        "خانه" to "⌂",
-        "تراکنش‌ها" to "↕",
-        "تعهدات" to "▣",
-        "پیامک‌ها" to "✉",
-        "گزارشات" to "≡",
-        "تنظیمات" to "⚙"
-    )
-    val navColor = Color(0xFF19D7B5)
+    Scaffold(bottomBar = {
+        NavigationBar {
+            listOf("خانه" to "⌂","تراکنش‌ها" to "▤","تعهدات" to "♢","پیامک‌ها" to "✉","گزارشات" to "▥","تنظیمات" to "⚙")
+                .forEachIndexed { i, item ->
+                    NavigationBarItem(selected = page == i, onClick = { page = i; if (i != 1) quickTransactionType = null },
+                        icon = { Text(item.second, style = MaterialTheme.typography.titleMedium) }, label = { Text(item.first) })
+                }
+        }
+    }) { p ->
+        when (page) {
+            1 -> Transactions(Modifier.padding(p), quickTransactionType, { quickTransactionType = null })
+            2 -> Loans(Modifier.padding(p))
+            3 -> SmsTransactions(Modifier.padding(p))
+            4 -> SimpleSectionScreen(Modifier.padding(p), "گزارشات", "گزارش‌های مالی در این بخش قرار می‌گیرند.")
+            5 -> SimpleSectionScreen(Modifier.padding(p), "تنظیمات", "تنظیمات برنامه")
+            else -> Home(Modifier.padding(p), onLogout,
+                onOpenTransaction = { type -> quickTransactionType = type; page = 1 },
+                onOpenPage = { target -> page = target; quickTransactionType = null })
+        }
+    }
+}
 
-    Scaffold(
-        containerColor = Color(0xFF17312C),
-        bottomBar = {
-            NavigationBar(
-                containerColor = navColor,
-                tonalElevation = 0.dp
-            ) {
-                navItems.forEachIndexed { i, item ->
-                    NavigationBarItem(
-                        selected = page == i,
-                        onClick = {
-                            page = i
-                            if (i != 1) quickTransactionType = null
-                        },
-                        icon = {
-                            Text(
-                                item.second,
-                                style = MaterialTheme.typography.titleLarge,
-                                color = Color.White
-                            )
-                        },
-                        label = {
-                            Text(item.first, color = Color.White)
-                        },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color.White,
-                            selectedTextColor = Color.White,
-                            unselectedIconColor = Color.White,
-                            unselectedTextColor = Color.White,
-                            indicatorColor = Color.Transparent
-                        )
-                    )
+@Composable
+private fun SimpleSectionScreen(modifier: Modifier, title: String, message: String) {
+    Column(modifier.fillMaxSize().background(Color(0xFFF7F9FC)).padding(20.dp), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+        Text(title, color = Color(0xFF111B4D), style = MaterialTheme.typography.headlineSmall)
+        Spacer(Modifier.height(24.dp))
+        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            Text(message, Modifier.padding(20.dp), color = Color(0xFF68738A))
+        }
+    }
+}
+
+@Composable
+fun SmsTransactions(modifier: Modifier) {
+    val context = LocalContext.current
+    var pending by remember { mutableStateOf(pendingSms(context)) }
+    var showDialog by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        while (true) { pending = pendingSms(context); kotlinx.coroutines.delay(1500) }
+    }
+
+    val green = Color(0xFF0F9F6E); val navy = Color(0xFF111B4D); val blue = Color(0xFF1877E8)
+    val red = Color(0xFFE02B2B); val orange = Color(0xFFE99513); val bg = Color(0xFFF7F9FC)
+
+    LazyColumn(modifier.fillMaxSize().background(bg), contentPadding = PaddingValues(horizontal = 14.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Spacer(Modifier.width(40.dp))
+                Text("تراکنش‌های پیامکی", color = navy, style = MaterialTheme.typography.headlineSmall)
+                Text("⚙", color = navy, style = MaterialTheme.typography.headlineMedium)
+            }
+        }
+        item {
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFFEAF3FF)),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFDDE7F5)), shape = MaterialTheme.shapes.large) {
+                Row(Modifier.fillMaxWidth().padding(14.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Surface(shape = MaterialTheme.shapes.extraLarge, color = Color(0xFFDCEBFF)) { Text("SMS", Modifier.padding(horizontal = 12.dp, vertical = 12.dp), color = blue) }
+                    Column(Modifier.weight(1f).padding(horizontal = 12.dp), horizontalAlignment = androidx.compose.ui.Alignment.End) {
+                        Text("تراکنش‌های شناسایی شده از پیامک", color = navy, style = MaterialTheme.typography.titleMedium)
+                        Text("تراکنش‌های بانکی شما از طریق پیامک شناسایی می‌شوند. لطفاً آن‌ها را بررسی و تأیید کنید.", color = Color(0xFF68738A), style = MaterialTheme.typography.bodySmall)
+                    }
+                    Surface(shape = MaterialTheme.shapes.medium, color = Color(0xFFE9F8F0)) {
+                        Column(Modifier.padding(horizontal = 10.dp, vertical = 7.dp), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                            Text("●  فعال", color = green, style = MaterialTheme.typography.labelMedium)
+                            Text("دریافت خودکار پیامک‌ها", color = Color(0xFF4C7A6B), style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
                 }
             }
         }
-    ) { p ->
-        when (page) {
-            1 -> Transactions(Modifier.padding(p), quickTransactionType) { quickTransactionType = null }
-            2 -> Loans(Modifier.padding(p))
-            3 -> SmsPage(Modifier.padding(p))
-            4 -> ReportsPage(Modifier.padding(p))
-            5 -> SettingsPage(Modifier.padding(p), onLogout)
-            else -> Home(
-                Modifier.padding(p),
-                onLogout,
-                onOpenTransaction = { type -> quickTransactionType = type; page = 1 },
-                onOpenPage = { target -> page = target; quickTransactionType = null }
-            )
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SmsStat("کل پیامک‌های خوانده شده", "۰", "✉", Color(0xFFEAF3FF), blue, Modifier.weight(1f))
+                SmsStat("نیاز به بررسی", if (pending != null) "۱" else "۰", "!", Color(0xFFFFF5DE), orange, Modifier.weight(1f))
+                SmsStat("در انتظار تأیید", if (pending != null) "۱" else "۰", "◷", Color(0xFFFFEDEF), red, Modifier.weight(1f))
+                SmsStat("تأیید شده امروز", "۰", "✓", Color(0xFFE9F8F0), green, Modifier.weight(1f))
+            }
+        }
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                val count = if (pending != null) 1 else 0
+                listOf("همه (" + count + ")" to true,"در انتظار تأیید (" + count + ")" to false,"نیاز به بررسی (" + count + ")" to false,"رد شده (۰)" to false).forEach { (label, selected) ->
+                    Surface(Modifier.weight(1f), shape = MaterialTheme.shapes.medium, color = if (selected) green else Color(0xFFF0F2F7)) {
+                        Text(label, Modifier.padding(horizontal = 5.dp, vertical = 10.dp), color = if (selected) Color.White else navy,
+                            style = MaterialTheme.typography.labelSmall, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    }
+                }
+            }
+        }
+        if (pending != null) {
+            item { SmsPendingCard(pending!!, { clearPendingSms(context); pending = null }, { showDialog = true }) }
+        } else {
+            item {
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Column(Modifier.fillMaxWidth().padding(28.dp), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                        Text("تراکنشی در انتظار تأیید وجود ندارد.", color = navy, style = MaterialTheme.typography.titleMedium)
+                        Text("پیامک بانکی جدید پس از شناسایی در اینجا نمایش داده می‌شود.", color = Color(0xFF68738A), style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        }
+    }
+    if (showDialog && pending != null) SmsTransactionDialog(pending!!, { showDialog = false }, { showDialog = false; pending = pendingSms(context) })
+}
+
+@Composable
+private fun SmsStat(title: String, value: String, icon: String, bg: Color, accent: Color, modifier: Modifier) {
+    Card(modifier, colors = CardDefaults.cardColors(containerColor = bg), shape = MaterialTheme.shapes.large) {
+        Column(Modifier.padding(10.dp), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+            Text(icon, color = accent, style = MaterialTheme.typography.titleLarge)
+            Text(title, color = Color(0xFF26304F), style = MaterialTheme.typography.labelSmall, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            Text(value, color = accent, style = MaterialTheme.typography.titleLarge)
+            Text("تراکنش", color = accent, style = MaterialTheme.typography.labelSmall)
         }
     }
 }
 
 @Composable
-private fun SmsPage(modifier: Modifier) {
-    val bg = Color(0xFF17312C)
-    Column(
-        modifier.fillMaxSize().background(bg).padding(18.dp),
-        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
-    ) {
-        Spacer(Modifier.height(36.dp))
-        Text("پیامک‌ها", color = Color.White, style = MaterialTheme.typography.headlineSmall)
-        Spacer(Modifier.height(24.dp))
-        Text("تراکنش در انتظار تأیید وجود ندارد.", color = Color.White, style = MaterialTheme.typography.titleMedium)
-    }
-}
-
-@Composable
-private fun ReportsPage(modifier: Modifier) {
-    Column(
-        modifier.fillMaxSize().background(Color(0xFF17312C)).padding(18.dp),
-        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
-    ) {
-        Spacer(Modifier.height(36.dp))
-        Text("گزارشات", color = Color.White, style = MaterialTheme.typography.headlineSmall)
-    }
-}
-
-@Composable
-private fun SettingsPage(modifier: Modifier, onLogout: () -> Unit) {
-    Column(
-        modifier.fillMaxSize().background(Color(0xFF17312C)).padding(18.dp),
-        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
-    ) {
-        Spacer(Modifier.height(36.dp))
-        Text("تنظیمات", color = Color.White, style = MaterialTheme.typography.headlineSmall)
-        Spacer(Modifier.height(24.dp))
-        Button(
-            onClick = onLogout,
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF75E7CC))
-        ) {
-            Text("خروج از حساب", color = Color(0xFF18443A))
+private fun SmsPendingCard(parsed: JSONObject, onReject: () -> Unit, onConfirm: () -> Unit) {
+    val navy = Color(0xFF111B4D); val green = Color(0xFF0F9F6E); val red = Color(0xFFE02B2B)
+    val amount = money(parsed.opt("amount")); val isIncome = parsed.optString("type") == "INCOME"
+    val title = parsed.optString("merchant").ifBlank { parsed.optString("description").ifBlank { if (isIncome) "واریز" else "تراکنش بانکی" } }
+    val detail = parsed.optString("description").ifBlank { if (isIncome) "واریز از بانک" else "خرید" }
+    val date = timestampToJalali(parsed.optLong("receivedAt"))
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E8EE)), shape = MaterialTheme.shapes.large) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Column(Modifier.width(190.dp).padding(14.dp), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                Button(onClick = onReject, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFE9EC), contentColor = red)) { Text("▣   رد") }
+                Spacer(Modifier.height(8.dp))
+                Button(onClick = onConfirm, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = green)) { Text("✓   تأیید و ثبت", color = Color.White) }
+            }
+            Column(Modifier.weight(1f).padding(14.dp), horizontalAlignment = androidx.compose.ui.Alignment.End) {
+                Text((if (isIncome) "+" else "-") + amount, color = if (isIncome) green else red, style = MaterialTheme.typography.titleLarge)
+                Text("ریال", color = Color(0xFF68738A), style = MaterialTheme.typography.bodySmall)
+                Text(title, color = navy, style = MaterialTheme.typography.titleMedium)
+                Text(detail, color = Color(0xFF68738A), style = MaterialTheme.typography.bodySmall)
+                Text("بانک ملت  •  " + date, color = Color(0xFF68738A), style = MaterialTheme.typography.bodySmall)
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    OutlinedButton(onClick = {}, modifier = Modifier.weight(1f)) { Text("بانک ملت") }
+                    OutlinedButton(onClick = {}, modifier = Modifier.weight(1f)) { Text(if (isIncome) "درآمد" else "هزینه") }
+                    OutlinedButton(onClick = {}, modifier = Modifier.weight(1f)) { Text("یادداشت") }
+                }
+            }
         }
     }
 }
