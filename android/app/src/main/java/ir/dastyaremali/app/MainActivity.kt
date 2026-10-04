@@ -214,67 +214,314 @@ fun LoginScreen(done: () -> Unit) {
     var user by remember { mutableStateOf("") }
     var pass by remember { mutableStateOf("") }
     var mobile by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
     var showReset by remember { mutableStateOf(false) }
-    var name by remember { mutableStateOf("") }
     var register by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) {
-        Text("دستیار مالی", style = MaterialTheme.typography.headlineMedium)
-        Text(if (register) "ساخت حساب جدید" else "ورود به حساب")
-        Spacer(Modifier.height(20.dp))
-        if (register) TextField(name, { name = it }, label = { Text("نام") }, modifier = Modifier.fillMaxWidth())
-        TextField(user, { user = it }, label = { Text("نام کاربری") }, modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp))
-        OutlinedTextField(
-            value = pass,
-            onValueChange = { pass = it },
-            label = { Text("گذرواژه") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-            trailingIcon = {
-                TextButton(onClick = { showPassword = !showPassword }) {
-                    Text(if (showPassword) "مخفی" else "نمایش")
+    var rememberMe by remember { mutableStateOf(true) }
+
+    val green = Color(0xFF079B62)
+    val darkGreen = Color(0xFF067E61)
+    val navy = Color(0xFF111B4D)
+    val muted = Color(0xFF68738A)
+    val bg = Color(0xFFF4FCF8)
+    val pale = Color(0xFFE8FAF2)
+
+    fun submit() {
+        scope.launch {
+            busy = true
+            error = ""
+            try {
+                if (register) {
+                    if (name.isBlank()) throw IllegalStateException("نام و نام خانوادگی را وارد کنید.")
+                    if (mobile.length != 11 || !mobile.startsWith("09")) throw IllegalStateException("شماره موبایل معتبر وارد کنید.")
+                    if (pass.length < 8) throw IllegalStateException("رمز عبور باید حداقل ۸ کاراکتر باشد.")
+                    call(context, "/api/auth/register/", "POST",
+                        JSONObject()
+                            .put("username", user.trim())
+                            .put("password", pass)
+                            .put("first_name", name.trim())
+                            .put("email", email.trim())
+                            .put("mobile", mobile)
+                            .toString())
                 }
-            },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
-        )
-        if (register) {
-            OutlinedTextField(
-                value = mobile,
-                onValueChange = { mobile = it.filter(Char::isDigit).take(11) },
-                label = { Text("شماره موبایل") },
-                modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
-            )
-        }
-        if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
-        Spacer(Modifier.height(10.dp))
-        Button(enabled = !busy, onClick = {
-            scope.launch {
-                busy = true; error = ""
-                try {
-                    if (register) {
-                        if (mobile.length != 11 || !mobile.startsWith("09")) throw IllegalStateException("شماره موبایل معتبر وارد کنید.")
-                        call(context, "/api/auth/register/", "POST",
-                            JSONObject().put("username", user.trim()).put("password", pass).put("first_name", name.trim()).put("mobile", mobile).toString())
-                    }
-                    val r = JSONObject(call(context, "/api/auth/token/", "POST",
-                        JSONObject().put("username", user.trim()).put("password", pass).toString()))
-                    context.saveTokens(r.getString("access"), r.optString("refresh").ifBlank { null }); done()
-                } catch (e: Exception) { error = e.message ?: "خطا" }
+                val r = JSONObject(call(context, "/api/auth/token/", "POST",
+                    JSONObject().put("username", user.trim()).put("password", pass).toString()))
+                context.saveTokens(r.getString("access"), r.optString("refresh").ifBlank { null })
+                done()
+            } catch (e: Exception) {
+                error = e.message ?: "اطلاعات واردشده صحیح نیست."
+            } finally {
                 busy = false
             }
-        }, modifier = Modifier.fillMaxWidth()) { Text(if (busy) "در حال انجام..." else if (register) "ساخت حساب" else "ورود") }
-        if (!register) {
-            TextButton(onClick = { showReset = true }, modifier = Modifier.fillMaxWidth()) { Text("بازیابی رمز عبور") }
         }
-        TextButton(onClick = { register = !register; error = ""; showReset = false }, modifier = Modifier.fillMaxWidth()) {
-            Text(if (register) "ورود به حساب" else "ساخت حساب جدید")
+    }
+
+    if (showReset) {
+        PasswordResetDialog(context, onClose = { showReset = false })
+    }
+
+    Column(
+        Modifier.fillMaxSize().background(bg)
+    ) {
+        if (register) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp),
+                horizontalArrangement = Arrangement.Start
+            ) {
+                Text("‹", color = navy, style = MaterialTheme.typography.headlineMedium,
+                    modifier = Modifier.clickable { register = false; error = "" })
+            }
         }
-        if (showReset) PasswordResetDialog(context, onClose = { showReset = false })
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            item {
+                Column(
+                    Modifier.fillMaxWidth(),
+                    horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
+                ) {
+                    if (!register) {
+                        Surface(
+                            shape = MaterialTheme.shapes.extraLarge,
+                            color = pale
+                        ) {
+                            Text("💼", Modifier.padding(24.dp), style = MaterialTheme.typography.displayMedium)
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Text("دستیار مالی", color = navy, style = MaterialTheme.typography.displaySmall)
+                        Text("مدیریت هوشمند هزینه‌ها و برنامه‌ریزی مالی",
+                            color = muted, style = MaterialTheme.typography.bodyLarge,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                    } else {
+                        Text("ثبت‌نام", color = navy, style = MaterialTheme.typography.displaySmall)
+                        Text("ایجاد حساب کاربری جدید", color = muted)
+                    }
+                }
+            }
+
+            if (register) {
+                item {
+                    Card(
+                        Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = pale),
+                        shape = MaterialTheme.shapes.large
+                    ) {
+                        Row(Modifier.fillMaxWidth().padding(16.dp),
+                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Text("🎁", style = MaterialTheme.typography.headlineLarge)
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text("شروع مدیریت هوشمند مالی", color = navy,
+                                    style = MaterialTheme.typography.titleMedium)
+                                Text("با ثبت‌نام، به تمام امکانات دستیار مالی دسترسی خواهید داشت.",
+                                    color = muted, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+                Row(
+                    Modifier.fillMaxWidth().background(Color.White, MaterialTheme.shapes.large).padding(5.dp)
+                ) {
+                    TextButton(
+                        onClick = { register = false; error = "" },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.textButtonColors(
+                            containerColor = if (!register) green else Color.Transparent,
+                            contentColor = if (!register) Color.White else navy
+                        )
+                    ) { Text("ورود") }
+                    TextButton(
+                        onClick = { register = true; error = "" },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.textButtonColors(
+                            containerColor = if (register) green else Color.Transparent,
+                            contentColor = if (register) Color.White else navy
+                        )
+                    ) { Text("ثبت‌نام") }
+                }
+            }
+
+            if (register) {
+                item {
+                    AuthField(name, { name = it }, "نام و نام خانوادگی", "👤")
+                }
+                item {
+                    AuthField(mobile, { mobile = it.filter(Char::isDigit).take(11) }, "شماره موبایل", "☎",
+                        KeyboardType.Phone)
+                }
+                item {
+                    AuthField(email, { email = it }, "ایمیل (اختیاری)", "✉",
+                        KeyboardType.Email)
+                }
+            } else {
+                item {
+                    AuthField(user, { user = it }, "نام کاربری / شماره موبایل", "☎")
+                }
+            }
+
+            item {
+                OutlinedTextField(
+                    value = pass,
+                    onValueChange = { pass = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text(if (register) "رمز عبور" else "رمز عبور") },
+                    placeholder = { Text("حداقل ۸ کاراکتر") },
+                    leadingIcon = { Text("🔒") },
+                    trailingIcon = {
+                        TextButton(onClick = { showPassword = !showPassword }) {
+                            Text(if (showPassword) "◉" else "◌", color = green)
+                        }
+                    },
+                    visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    shape = MaterialTheme.shapes.large
+                )
+            }
+
+            if (register) {
+                item {
+                    AuthField(passConfirmValue = "", onValueChange = {}, label = "", icon = "")
+                }
+            }
+
+            if (!register) {
+                item {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                    ) {
+                        TextButton(onClick = { showReset = true }) {
+                            Text("فراموشی رمز عبور؟", color = green)
+                        }
+                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Checkbox(rememberMe, { rememberMe = it }, colors = CheckboxDefaults.colors(checkedColor = green))
+                            Text("مرا به خاطر بسپار", color = muted)
+                        }
+                    }
+                }
+            } else {
+                item {
+                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        Checkbox(true, {}, colors = CheckboxDefaults.colors(checkedColor = green))
+                        Text("شرایط استفاده و حریم خصوصی را مطالعه کرده‌ام.", color = muted,
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+
+            if (error.isNotBlank()) {
+                item {
+                    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEEEE))) {
+                        Text(error, Modifier.padding(12.dp), color = Color(0xFFD92D20))
+                    }
+                }
+            }
+
+            item {
+                Button(
+                    onClick = { submit() },
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth().height(54.dp),
+                    shape = MaterialTheme.shapes.large,
+                    colors = ButtonDefaults.buttonColors(containerColor = darkGreen)
+                ) {
+                    Text(
+                        if (busy) "در حال انجام..." else if (register) "ثبت‌نام  ＋" else "ورود به حساب کاربری  →",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
+            }
+
+            if (!register) {
+                item {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                    ) {
+                        HorizontalDivider(Modifier.weight(1f), color = Color(0xFFDDE5E1))
+                        Text("  یا  ", color = muted)
+                        HorizontalDivider(Modifier.weight(1f), color = Color(0xFFDDE5E1))
+                    }
+                }
+                item {
+                    OutlinedButton(
+                        onClick = {
+                            android.widget.Toast.makeText(context, "ورود با کد یکبارمصرف در حال آماده‌سازی است.", android.widget.Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        shape = MaterialTheme.shapes.large
+                    ) {
+                        Text("ورود با کد یکبار مصرف  ▣", color = darkGreen)
+                    }
+                }
+                item {
+                    Card(
+                        Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = pale),
+                        shape = MaterialTheme.shapes.large
+                    ) {
+                        Row(Modifier.fillMaxWidth().padding(14.dp),
+                            horizontalArrangement = Arrangement.SpaceEvenly) {
+                            LoginBenefit("▥", "کنترل هزینه‌ها")
+                            LoginBenefit("◔", "گزارش‌های کاربردی")
+                            LoginBenefit("✓", "امن و مطمئن")
+                        }
+                    }
+                }
+            } else {
+                item {
+                    OutlinedButton(
+                        onClick = { register = false; error = "" },
+                        modifier = Modifier.fillMaxWidth().height(50.dp),
+                        shape = MaterialTheme.shapes.large
+                    ) { Text("قبلاً حساب دارید؟  ورود به حساب کاربری", color = darkGreen) }
+                }
+            }
+            item { Spacer(Modifier.height(24.dp)) }
+        }
+    }
+}
+
+@Composable
+private fun AuthField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    icon: String,
+    keyboardType: KeyboardType = KeyboardType.Text,
+    passConfirmValue: String? = null
+) {
+    if (label.isBlank()) return
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        label = { Text(label) },
+        leadingIcon = { Text(icon) },
+        keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+        shape = MaterialTheme.shapes.large
+    )
+}
+
+@Composable
+private fun LoginBenefit(icon: String, text: String) {
+    Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally, modifier = Modifier.widthIn(min = 75.dp)) {
+        Text(icon, color = Color(0xFF079B62), style = MaterialTheme.typography.headlineSmall)
+        Text(text, color = Color(0xFF68738A), style = MaterialTheme.typography.labelSmall,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     }
 }
 
