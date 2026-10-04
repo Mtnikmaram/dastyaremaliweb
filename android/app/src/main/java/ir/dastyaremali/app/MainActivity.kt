@@ -74,8 +74,10 @@ private suspend fun uploadReceipt(context: Context, path: String, uri: android.n
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // SMS permission is requested only when the user opens the SMS section.
-        // Do not block/crash the app during startup on newer Android/Samsung builds.
+        if (android.os.Build.VERSION.SDK_INT >= 23 &&
+            checkSelfPermission(Manifest.permission.RECEIVE_SMS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.RECEIVE_SMS), 1001)
+        }
         setContent { DastyarApp() }
     }
 }
@@ -1047,10 +1049,6 @@ fun SmsTransactions(modifier: Modifier) {
     var pending by remember { mutableStateOf(pendingSms(context)) }
     var showDialog by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        if (android.os.Build.VERSION.SDK_INT >= 23 &&
-            context.checkSelfPermission(Manifest.permission.RECEIVE_SMS) != PackageManager.PERMISSION_GRANTED) {
-            (context as? ComponentActivity)?.requestPermissions(arrayOf(Manifest.permission.RECEIVE_SMS), 1001)
-        }
         while (true) { pending = pendingSms(context); kotlinx.coroutines.delay(1500) }
     }
 
