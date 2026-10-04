@@ -247,21 +247,107 @@ fun LoginScreen(done: () -> Unit) {
 fun AppShell(onLogout: () -> Unit) {
     var page by remember { mutableStateOf(0) }
     var quickTransactionType by remember { mutableStateOf<String?>(null) }
-    Scaffold(bottomBar = {
-        NavigationBar {
-            listOf("خانه" to "⌂","تراکنش" to "↕","اقساط" to "▣","حساب" to "●").forEachIndexed { i, item ->
-                NavigationBarItem(selected = page == i, onClick = { page = i; if (i != 1) quickTransactionType = null },
-                    icon = { Text(item.second, style = MaterialTheme.typography.titleMedium) }, label = { Text(item.first) })
+    val navItems = listOf(
+        "خانه" to "⌂",
+        "تراکنش‌ها" to "↕",
+        "تعهدات" to "▣",
+        "پیامک‌ها" to "✉",
+        "گزارشات" to "≡",
+        "تنظیمات" to "⚙"
+    )
+    val navColor = Color(0xFF19D7B5)
+
+    Scaffold(
+        containerColor = Color(0xFF17312C),
+        bottomBar = {
+            NavigationBar(
+                containerColor = navColor,
+                tonalElevation = 0.dp
+            ) {
+                navItems.forEachIndexed { i, item ->
+                    NavigationBarItem(
+                        selected = page == i,
+                        onClick = {
+                            page = i
+                            if (i != 1) quickTransactionType = null
+                        },
+                        icon = {
+                            Text(
+                                item.second,
+                                style = MaterialTheme.typography.titleLarge,
+                                color = Color.White
+                            )
+                        },
+                        label = {
+                            Text(item.first, color = Color.White)
+                        },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Color.White,
+                            selectedTextColor = Color.White,
+                            unselectedIconColor = Color.White,
+                            unselectedTextColor = Color.White,
+                            indicatorColor = Color.Transparent
+                        )
+                    )
+                }
             }
         }
-    }) { p ->
+    ) { p ->
         when (page) {
-            1 -> Transactions(Modifier.padding(p), quickTransactionType, { quickTransactionType = null })
+            1 -> Transactions(Modifier.padding(p), quickTransactionType) { quickTransactionType = null }
             2 -> Loans(Modifier.padding(p))
-            3 -> Accounts(Modifier.padding(p))
-            else -> Home(Modifier.padding(p), onLogout,
+            3 -> SmsPage(Modifier.padding(p))
+            4 -> ReportsPage(Modifier.padding(p))
+            5 -> SettingsPage(Modifier.padding(p), onLogout)
+            else -> Home(
+                Modifier.padding(p),
+                onLogout,
                 onOpenTransaction = { type -> quickTransactionType = type; page = 1 },
-                onOpenPage = { target -> page = target; quickTransactionType = null })
+                onOpenPage = { target -> page = target; quickTransactionType = null }
+            )
+        }
+    }
+}
+
+@Composable
+private fun SmsPage(modifier: Modifier) {
+    val bg = Color(0xFF17312C)
+    Column(
+        modifier.fillMaxSize().background(bg).padding(18.dp),
+        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
+    ) {
+        Spacer(Modifier.height(36.dp))
+        Text("پیامک‌ها", color = Color.White, style = MaterialTheme.typography.headlineSmall)
+        Spacer(Modifier.height(24.dp))
+        Text("تراکنش در انتظار تأیید وجود ندارد.", color = Color.White, style = MaterialTheme.typography.titleMedium)
+    }
+}
+
+@Composable
+private fun ReportsPage(modifier: Modifier) {
+    Column(
+        modifier.fillMaxSize().background(Color(0xFF17312C)).padding(18.dp),
+        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
+    ) {
+        Spacer(Modifier.height(36.dp))
+        Text("گزارشات", color = Color.White, style = MaterialTheme.typography.headlineSmall)
+    }
+}
+
+@Composable
+private fun SettingsPage(modifier: Modifier, onLogout: () -> Unit) {
+    Column(
+        modifier.fillMaxSize().background(Color(0xFF17312C)).padding(18.dp),
+        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally
+    ) {
+        Spacer(Modifier.height(36.dp))
+        Text("تنظیمات", color = Color.White, style = MaterialTheme.typography.headlineSmall)
+        Spacer(Modifier.height(24.dp))
+        Button(
+            onClick = onLogout,
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF75E7CC))
+        ) {
+            Text("خروج از حساب", color = Color(0xFF18443A))
         }
     }
 }
