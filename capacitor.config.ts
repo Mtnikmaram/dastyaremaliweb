@@ -4,10 +4,7 @@ const config: CapacitorConfig = {
   appId: 'ir.dastyaremali.app',
   appName: 'دستیار مالی',
   webDir: 'www',
-  bundledWebRuntime: false,
-  server: {
-    androidScheme: 'https'
-  }
+  bundledWebRuntime: false
 };
 
 export default config;
